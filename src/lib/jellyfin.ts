@@ -231,7 +231,13 @@ export async function getPlaybackInfo(
       AutoOpenLiveStream: true,
       MediaSourceId: itemId,
       MaxStreamingBitrate: maxStreamingBitrate,
-      DeviceProfile: { ...DEVICE_PROFILE, MaxStreamingBitrate: maxStreamingBitrate ?? 120000000 },
+      // Note: MaxStaticBitrate (100Mbps, above) gates direct-play eligibility and is unaffected here.
+      // This only caps the *transcode encode target* — when a transcode is forced for any reason
+      // (subtitle burn-in, HDR tonemap, codec mismatch), Jellyfin aims VideoBitrate at
+      // (this value - audio bitrate). 120Mbps is not achievable in real time by a software x264
+      // encoder doing subtitle burn-in + tonemap, and Jellyfin returns 500 on segment requests
+      // when ffmpeg can't keep up. 20Mbps is a realistic real-time transcode ceiling.
+      DeviceProfile: { ...DEVICE_PROFILE, MaxStreamingBitrate: maxStreamingBitrate ?? 20000000 },
     }),
   }) as Promise<PlaybackInfo>;
 }
