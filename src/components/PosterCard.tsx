@@ -13,7 +13,7 @@ export function PosterCard({ item, progress, variant = 'portrait' }: PosterCardP
   const isEpisode = item.Type === 'Episode';
   const title = isEpisode ? item.SeriesName || item.Name : item.Name;
   const subtitle = isEpisode ? `S${item.ParentIndexNumber || 0}:E${item.IndexNumber || 0} · ${item.Name}` : '';
-  const imageType = variant === 'landscape' ? 'Primary' : 'Primary';
+  const imageType = variant === 'landscape' && !isEpisode ? 'Backdrop' : 'Primary';
   const typeLabel =
     item.Type === 'Series'
       ? 'Series'
