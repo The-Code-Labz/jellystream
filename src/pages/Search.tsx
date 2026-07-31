@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { searchItems } from '@/lib/jellyfin';
@@ -12,28 +12,34 @@ export function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [items, setItems] = useState<JellyfinItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const activeQuery = searchParams.get('q') || '';
 
   useEffect(() => {
     if (!user) return;
-    const q = searchParams.get('q');
-    if (!q) {
+    if (!activeQuery) {
       setItems([]);
+      setTotal(0);
       return;
     }
     async function load() {
       setLoading(true);
+      setError('');
       try {
-        const res = await searchItems(user!.AccessToken, user!.Id, q!, 50);
+        const res = await searchItems(user!.AccessToken, user!.Id, activeQuery, 50);
         setItems(res.Items);
+        setTotal(res.TotalRecordCount);
       } catch (err) {
-        console.error(err);
+        setError(err instanceof Error ? err.message : 'Search failed.');
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [user, searchParams]);
+  }, [user, activeQuery]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,25 +47,38 @@ export function Search() {
     else setSearchParams({});
   };
 
-  return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <h1 className="mb-6 text-2xl font-bold text-white">Search</h1>
+  const clear = () => {
+    setQuery('');
+    setSearchParams({});
+  };
 
-      <form onSubmit={submit} className="mb-8 max-w-2xl">
+  return (
+    <div className="px-5 py-8 sm:px-8 lg:px-12">
+      <h1 className="mb-1 text-2xl font-bold text-ink">
+        {activeQuery ? `Results for “${activeQuery}”` : 'Search your Jellyfin library'}
+      </h1>
+      <p className="mb-6 text-sm text-muted">
+        {activeQuery ? (loading ? 'Searching…' : `${total} result${total === 1 ? '' : 's'}`) : 'Find movies, series, and episodes by title.'}
+      </p>
+
+      <form onSubmit={submit} role="search" className="mb-8 max-w-2xl">
+        <label htmlFor="search-field" className="sr-only">Search movies, shows, episodes</label>
         <div className="relative">
           <input
+            id="search-field"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search movies, shows, episodes..."
-            className="w-full rounded-xl border border-white/10 bg-surface py-3 pl-12 pr-10 text-white placeholder-muted outline-none focus:border-accent"
+            placeholder="Search movies, shows, episodes…"
+            className="h-14 w-full rounded-xl border border-border bg-surface pl-12 pr-11 text-base text-ink placeholder-muted outline-none focus-visible:border-accent"
           />
-          <SearchIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted" />
+          <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted" aria-hidden="true" />
           {query && (
             <button
               type="button"
-              onClick={() => { setQuery(''); setSearchParams({}); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-white"
+              onClick={clear}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center text-muted hover:text-ink"
             >
               <X className="h-5 w-5" />
             </button>
@@ -67,12 +86,32 @@ export function Search() {
         </div>
       </form>
 
-      {loading ? (
+      {error ? (
+        <p className="py-16 text-center text-sm text-danger">{error}</p>
+      ) : loading ? (
         <SkeletonPosterGrid />
       ) : (
         <PosterGrid
           items={items}
-          emptyText={searchParams.get('q') ? `No results for "${searchParams.get('q')}"` : 'Start typing to search your library.'}
+          emptyState={
+            activeQuery ? (
+              <div className="flex flex-col items-center gap-3 py-16 text-center">
+                <p className="text-ink">No results for “{activeQuery}”.</p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    onClick={clear}
+                    className="flex h-10 items-center rounded-lg bg-surface px-4 text-sm font-semibold text-ink hover:bg-surfaceHover"
+                  >
+                    Clear search
+                  </button>
+                  <Link to="/movies" className="text-sm font-medium text-accent hover:underline">Browse Movies</Link>
+                  <Link to="/shows" className="text-sm font-medium text-accent hover:underline">Browse Series</Link>
+                </div>
+              </div>
+            ) : (
+              <p className="py-16 text-center text-muted">Start typing to search your library.</p>
+            )
+          }
         />
       )}
     </div>

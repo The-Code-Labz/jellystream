@@ -4,20 +4,48 @@
 
 @layer base {
   body {
-    @apply bg-background text-white antialiased;
+    @apply bg-background text-ink antialiased;
   }
+
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   ::-webkit-scrollbar-track {
-    background: #0f0f0f;
+    background: #090b0c;
   }
   ::-webkit-scrollbar-thumb {
-    background: #333;
+    background: #292e32;
     border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    background: #3a4045;
+  }
+
+  :focus-visible {
+    outline: 2px solid #c7dc62;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }

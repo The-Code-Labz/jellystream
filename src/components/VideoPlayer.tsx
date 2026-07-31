@@ -124,11 +124,11 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
   };
 
   return (
-    <div ref={containerRef} className="group relative w-full bg-black">
+    <div ref={containerRef} className="group relative h-full w-full bg-black">
       <video
         ref={videoRef}
         poster={poster}
-        className="h-full w-full cursor-pointer"
+        className="h-full w-full cursor-pointer object-contain"
         onClick={togglePlay}
         onTimeUpdate={onTimeUpdate}
         onPlay={() => setPlaying(true)}
@@ -136,20 +136,28 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
         playsInline
       />
 
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-        <div className="mb-2 h-1 cursor-pointer rounded bg-white/20">
+      <div className="player-controls absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 transition-opacity duration-220 group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="mb-3 h-1 cursor-pointer rounded bg-white/20">
           <div
             className="h-full bg-accent"
             style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
           />
         </div>
 
-        <div className="flex items-center gap-3">
-          <button onClick={togglePlay} className="text-white hover:text-accent">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={togglePlay}
+            aria-label={playing ? 'Pause' : 'Play'}
+            className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
+          >
             {playing ? <Pause className="h-6 w-6 fill-white" /> : <Play className="h-6 w-6 fill-white" />}
           </button>
 
-          <button onClick={toggleMute} className="text-white hover:text-accent">
+          <button
+            onClick={toggleMute}
+            aria-label={muted ? 'Unmute' : 'Mute'}
+            className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
+          >
             {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
           </button>
 
@@ -165,10 +173,11 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
               setVolume(v);
               if (v > 0) setMuted(false);
             }}
+            aria-label="Volume"
             className="w-24 accent-accent"
           />
 
-          <span className="text-xs text-white">
+          <span className="pl-1 text-xs text-white/90">
             {formatTime(progress)} / {formatTime(duration)}
           </span>
 
@@ -177,7 +186,8 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
               <select
                 value={selectedAudio}
                 onChange={(e) => setSelectedAudio(Number(e.target.value))}
-                className="rounded bg-black/70 px-2 py-1 text-xs text-white"
+                aria-label="Audio track"
+                className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
               >
                 {audioStreams.map((s) => (
                   <option key={s.Index} value={s.Index}>{s.DisplayTitle || s.Language || `Audio ${s.Index}`}</option>
@@ -189,7 +199,8 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
               <select
                 value={selectedSubtitle}
                 onChange={(e) => setSelectedSubtitle(Number(e.target.value))}
-                className="rounded bg-black/70 px-2 py-1 text-xs text-white"
+                aria-label="Subtitles"
+                className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
               >
                 <option value={undefined}>Subtitles off</option>
                 {subtitleStreams.map((s) => (
@@ -198,7 +209,11 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
               </select>
             )}
 
-            <button onClick={toggleFullscreen} className="text-white hover:text-accent">
+            <button
+              onClick={toggleFullscreen}
+              aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
+            >
               {fullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
             </button>
           </div>
