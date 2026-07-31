@@ -23,7 +23,7 @@ export function Watch() {
     try {
       const detail = await fetchItem(user.AccessToken, user.Id, id);
       setItem(detail);
-      const info = await getPlaybackInfo(user.AccessToken, id);
+      const info = await getPlaybackInfo(user.AccessToken, user.Id, id);
       const best = info.MediaSources?.[0];
       if (!best) {
         setError('No playable media source was found for this title.');

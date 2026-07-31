@@ -169,8 +169,8 @@ export async function searchItems(token: string, userId: string, query: string, 
   });
 }
 
-export async function getPlaybackInfo(token: string, itemId: string): Promise<PlaybackInfo> {
-  return request(`/Items/${itemId}/PlaybackInfo?UserId=me`, { token }) as Promise<PlaybackInfo>;
+export async function getPlaybackInfo(token: string, userId: string, itemId: string): Promise<PlaybackInfo> {
+  return request(`/Items/${itemId}/PlaybackInfo?UserId=${userId}`, { token }) as Promise<PlaybackInfo>;
 }
 
 export async function markPlayed(token: string, userId: string, itemId: string, played: boolean): Promise<void> {
