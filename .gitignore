@@ -32,3 +32,6 @@ dist-ssr
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+
+# Generated at build time by scripts/gen-redirects.mjs
+public/_redirects
