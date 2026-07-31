@@ -81,7 +81,7 @@ export function Catalog({ type }: CatalogProps) {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
     else next.delete(key);
-    next.delete('startIndex');
+    if (key !== 'startIndex') next.delete('startIndex');
     setSearchParams(next);
   };
 
