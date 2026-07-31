@@ -12,7 +12,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="pt-16">{children}</main>
+      <main className="pt-[72px]">{children}</main>
     </div>
   );
 }
@@ -22,6 +22,14 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (isLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
   return <Layout>{children}</Layout>;
+}
+
+/** Watch route owns its own minimal top bar — never pair it with the global Navbar. */
+function RequireAuthBare({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
 }
 
 function GuestOnly({ children }: { children: React.ReactNode }) {
@@ -41,7 +49,7 @@ export default function App() {
       <Route path="/catalog" element={<RequireAuth><Catalog /></RequireAuth>} />
       <Route path="/search" element={<RequireAuth><Search /></RequireAuth>} />
       <Route path="/item/:id" element={<RequireAuth><Detail /></RequireAuth>} />
-      <Route path="/watch/:id" element={<RequireAuth><Watch /></RequireAuth>} />
+      <Route path="/watch/:id" element={<RequireAuthBare><Watch /></RequireAuthBare>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

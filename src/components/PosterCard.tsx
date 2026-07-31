@@ -1,54 +1,106 @@
 import { Link } from 'react-router-dom';
-import { Play, Star } from 'lucide-react';
+import { Play, Star, Check } from 'lucide-react';
 import { getImageUrl, formatRuntime } from '@/lib/jellyfin';
 import type { JellyfinItem } from '@/lib/types';
 
 interface PosterCardProps {
   item: JellyfinItem;
   progress?: number;
+  variant?: 'portrait' | 'landscape';
 }
 
-export function PosterCard({ item, progress }: PosterCardProps) {
+export function PosterCard({ item, progress, variant = 'portrait' }: PosterCardProps) {
   const isEpisode = item.Type === 'Episode';
   const title = isEpisode ? item.SeriesName || item.Name : item.Name;
   const subtitle = isEpisode ? `S${item.ParentIndexNumber || 0}:E${item.IndexNumber || 0} · ${item.Name}` : '';
+  const imageType = variant === 'landscape' && !isEpisode ? 'Backdrop' : 'Primary';
+  const typeLabel =
+    item.Type === 'Series'
+      ? 'Series'
+      : item.RuntimeTicks
+      ? formatRuntime(item.RuntimeTicks)
+      : undefined;
+
+  const showProgress = progress !== undefined && progress > 0 && progress < 100;
+  const alt = isEpisode ? `${title} — ${subtitle}` : `${title}${item.ProductionYear ? `, ${item.ProductionYear}` : ''}`;
+
+  const sizeClass =
+    variant === 'landscape'
+      ? 'w-56 sm:w-64 md:w-72'
+      : 'w-36 sm:w-44 md:w-48';
+  const aspectClass = variant === 'landscape' ? 'aspect-video' : 'aspect-[2/3]';
 
   return (
     <Link
       to={item.Type === 'Movie' || item.Type === 'Series' ? `/item/${item.Id}` : `/watch/${item.Id}`}
-      className="group relative flex-shrink-0 w-36 sm:w-44 md:w-52 overflow-hidden rounded-md bg-surface transition-transform duration-300 hover:scale-105 hover:z-10"
+      className={`group relative flex-shrink-0 rounded transition-transform duration-220 hover:scale-102 focus-visible:scale-102 ${sizeClass}`}
     >
-      <div className="aspect-[2/3] relative overflow-hidden">
+      <div className={`relative overflow-hidden rounded bg-surface ${aspectClass}`}>
         <img
-          src={getImageUrl(item.Id, 'Primary', { maxWidth: 400 })}
-          alt={item.Name}
+          src={getImageUrl(item.Id, imageType, { maxWidth: variant === 'landscape' ? 500 : 400 })}
+          alt={alt}
           loading="lazy"
-          className="h-full w-full object-cover transition-opacity duration-300 group-hover:opacity-75"
-          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder-poster.svg'; }}
+          decoding="async"
+          className="h-full w-full object-cover"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).src = '/placeholder-poster.svg';
+          }}
         />
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-          <div className="rounded-full bg-accent/90 p-3">
-            <Play className="h-6 w-6 fill-white text-white" />
-          </div>
+
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded ring-1 ring-inset ring-transparent transition-colors duration-220 group-hover:ring-accent group-focus-visible:ring-accent"
+        />
+
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-background/70 opacity-0 transition-opacity duration-220 group-hover:opacity-100 group-focus-visible:opacity-100"
+        >
+          <Play className="h-4 w-4 fill-ink text-ink" />
         </div>
-        {progress !== undefined && progress > 0 && progress < 100 && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+
+        <div className="absolute left-2 top-2 flex items-center gap-1">
+          {item.UserData?.Played && (
+            <span
+              className="flex h-6 w-6 items-center justify-center rounded bg-background/70 text-success"
+              aria-label="Watched"
+              title="Watched"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </span>
+          )}
+          {item.UserData?.IsFavorite && (
+            <span
+              className="flex h-6 w-6 items-center justify-center rounded bg-background/70 text-accent"
+              aria-label="Favorite"
+              title="Favorite"
+            >
+              <Star className="h-3.5 w-3.5 fill-current" />
+            </span>
+          )}
+        </div>
+
+        {typeLabel && (
+          <div className="absolute right-2 top-2 rounded bg-background/70 px-1.5 py-0.5 text-[11px] font-medium text-ink">
+            {typeLabel}
+          </div>
+        )}
+
+        {showProgress && (
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-white/15" aria-hidden="true">
             <div className="h-full bg-accent" style={{ width: `${progress}%` }} />
           </div>
         )}
-        <div className="absolute top-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-medium text-white">
-          {item.Type === 'Movie' ? formatRuntime(item.RuntimeTicks) : 'Series'}
-        </div>
       </div>
-      <div className="p-2">
-        <h3 className="truncate text-sm font-semibold text-white">{title}</h3>
+
+      <div className="pt-2">
+        <h3 className="truncate text-sm font-semibold text-ink">{title}</h3>
         {subtitle ? (
           <p className="truncate text-xs text-muted">{subtitle}</p>
         ) : (
-          <div className="mt-1 flex items-center gap-2 text-xs text-muted">
+          <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
             {item.ProductionYear && <span>{item.ProductionYear}</span>}
-            {item.OfficialRating && <span className="rounded border border-white/20 px-1">{item.OfficialRating}</span>}
-            {item.UserData?.IsFavorite && <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />}
+            {item.OfficialRating && <span className="rounded border border-border px-1">{item.OfficialRating}</span>}
           </div>
         )}
       </div>

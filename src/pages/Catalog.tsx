@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { RotateCcw } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchMovies, fetchSeries, fetchItems, fetchGenres } from '@/lib/jellyfin';
 import { PosterGrid } from '@/components/PosterGrid';
@@ -10,18 +11,22 @@ interface CatalogProps {
   type?: 'Movie' | 'Series';
 }
 
+const DEFAULT_SORT_BY = 'SortName';
+const DEFAULT_SORT_ORDER = 'Ascending';
+
 export function Catalog({ type }: CatalogProps) {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<JellyfinItem[]>([]);
   const [genres, setGenres] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [total, setTotal] = useState(0);
 
   const selectedGenre = searchParams.get('genre') || '';
   const selectedYear = searchParams.get('year') || '';
-  const sortBy = searchParams.get('sortBy') || 'SortName';
-  const sortOrder = searchParams.get('sortOrder') || 'Ascending';
+  const sortBy = searchParams.get('sortBy') || DEFAULT_SORT_BY;
+  const sortOrder = searchParams.get('sortOrder') || DEFAULT_SORT_ORDER;
   const startIndex = parseInt(searchParams.get('startIndex') || '0', 10);
   const limit = 48;
 
@@ -29,6 +34,7 @@ export function Catalog({ type }: CatalogProps) {
     if (!user) return;
     async function load() {
       setLoading(true);
+      setError('');
       try {
         const options = {
           genre: selectedGenre,
@@ -56,7 +62,7 @@ export function Catalog({ type }: CatalogProps) {
         setItems(res.Items);
         setTotal(res.TotalRecordCount);
       } catch (err) {
-        console.error(err);
+        setError(err instanceof Error ? err.message : 'Failed to load the catalog.');
       } finally {
         setLoading(false);
       }
@@ -66,7 +72,9 @@ export function Catalog({ type }: CatalogProps) {
 
   useEffect(() => {
     if (!user) return;
-    fetchGenres(user.AccessToken).then((g) => setGenres(g.Items.map((x) => x.Name).sort())).catch(console.error);
+    fetchGenres(user.AccessToken)
+      .then((g) => setGenres(g.Items.map((x) => x.Name).sort()))
+      .catch(() => null);
   }, [user]);
 
   const updateParam = (key: string, value: string) => {
@@ -77,72 +85,139 @@ export function Catalog({ type }: CatalogProps) {
     setSearchParams(next);
   };
 
+  const resetFilters = () => setSearchParams({});
+
+  const filtersActive = Boolean(selectedGenre || selectedYear || sortBy !== DEFAULT_SORT_BY || sortOrder !== DEFAULT_SORT_ORDER);
+
   const years = Array.from({ length: 40 }, (_, i) => String(new Date().getFullYear() - i));
+  const pageTitle = type === 'Movie' ? 'Movies' : type === 'Series' ? 'Series' : 'Catalog';
+
+  const activeFilterLabels = [
+    selectedGenre && `Genre: ${selectedGenre}`,
+    selectedYear && `Year: ${selectedYear}`,
+  ].filter(Boolean) as string[];
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <h1 className="mb-6 text-2xl font-bold text-white">{type === 'Movie' ? 'Movies' : type === 'Series' ? 'TV Shows' : 'Catalog'}</h1>
-
-      <div className="mb-6 flex flex-wrap gap-3">
-        <select
-          value={selectedGenre}
-          onChange={(e) => updateParam('genre', e.target.value)}
-          className="rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white outline-none focus:border-accent"
-        >
-          <option value="">All Genres</option>
-          {genres.map((g) => <option key={g} value={g}>{g}</option>)}
-        </select>
-
-        <select
-          value={selectedYear}
-          onChange={(e) => updateParam('year', e.target.value)}
-          className="rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white outline-none focus:border-accent"
-        >
-          <option value="">All Years</option>
-          {years.map((y) => <option key={y} value={y}>{y}</option>)}
-        </select>
-
-        <select
-          value={sortBy}
-          onChange={(e) => updateParam('sortBy', e.target.value)}
-          className="rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white outline-none focus:border-accent"
-        >
-          <option value="SortName">Title</option>
-          <option value="ProductionYear">Release Year</option>
-          <option value="DateCreated">Date Added</option>
-          <option value="CommunityRating">Rating</option>
-        </select>
-
-        <select
-          value={sortOrder}
-          onChange={(e) => updateParam('sortOrder', e.target.value)}
-          className="rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white outline-none focus:border-accent"
-        >
-          <option value="Ascending">Ascending</option>
-          <option value="Descending">Descending</option>
-        </select>
+    <div className="pb-16">
+      <div className="px-5 pt-6 sm:px-8 lg:px-12">
+        <h1 className="text-2xl font-bold text-ink">{pageTitle}</h1>
+        <p className="mt-1 text-sm text-muted">{loading ? 'Loading…' : `${total} title${total === 1 ? '' : 's'}`}</p>
       </div>
 
-      {loading ? <SkeletonPosterGrid /> : <PosterGrid items={items} />}
+      <div className="sticky top-[72px] z-30 mt-4 border-y border-border bg-background/95 px-5 py-3 backdrop-blur sm:px-8 lg:px-12">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-genre" className="text-xs font-medium text-muted">Genre</label>
+            <select
+              id="filter-genre"
+              value={selectedGenre}
+              onChange={(e) => updateParam('genre', e.target.value)}
+              className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-ink outline-none focus-visible:border-accent"
+            >
+              <option value="">All genres</option>
+              {genres.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
 
-      <div className="mt-8 flex justify-center gap-3">
-        <button
-          disabled={startIndex === 0}
-          onClick={() => updateParam('startIndex', String(Math.max(0, startIndex - limit)))}
-          className="rounded-lg bg-surface px-4 py-2 text-sm text-white hover:bg-surfaceHover disabled:opacity-40"
-        >
-          Previous
-        </button>
-        <span className="self-center text-sm text-muted">
-          {startIndex + 1}-{Math.min(startIndex + items.length, total)} of {total}
-        </span>
-        <button
-          disabled={startIndex + limit >= total}
-          onClick={() => updateParam('startIndex', String(startIndex + limit))}
-          className="rounded-lg bg-surface px-4 py-2 text-sm text-white hover:bg-surfaceHover disabled:opacity-40"
-        >
-          Next
-        </button>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-year" className="text-xs font-medium text-muted">Year</label>
+            <select
+              id="filter-year"
+              value={selectedYear}
+              onChange={(e) => updateParam('year', e.target.value)}
+              className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-ink outline-none focus-visible:border-accent"
+            >
+              <option value="">All years</option>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-sort" className="text-xs font-medium text-muted">Sort</label>
+            <select
+              id="filter-sort"
+              value={sortBy}
+              onChange={(e) => updateParam('sortBy', e.target.value)}
+              className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-ink outline-none focus-visible:border-accent"
+            >
+              <option value="SortName">Title</option>
+              <option value="ProductionYear">Release year</option>
+              <option value="DateCreated">Date added</option>
+              <option value="CommunityRating">Rating</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-direction" className="text-xs font-medium text-muted">Direction</label>
+            <select
+              id="filter-direction"
+              value={sortOrder}
+              onChange={(e) => updateParam('sortOrder', e.target.value)}
+              className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-ink outline-none focus-visible:border-accent"
+            >
+              <option value="Ascending">Ascending</option>
+              <option value="Descending">Descending</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={resetFilters}
+            disabled={!filtersActive}
+            className="flex h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted hover:bg-surfaceHover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <RotateCcw className="h-4 w-4" /> Reset
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 pt-6 sm:px-8 lg:px-12">
+        {error ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <p className="text-sm text-danger">{error}</p>
+          </div>
+        ) : loading ? (
+          <SkeletonPosterGrid />
+        ) : (
+          <PosterGrid
+            items={items}
+            emptyState={
+              <div className="flex flex-col items-center gap-3 py-16 text-center">
+                <p className="text-ink">
+                  No titles match {activeFilterLabels.length > 0 ? activeFilterLabels.join(', ') : 'the current filters'}.
+                </p>
+                <button
+                  onClick={resetFilters}
+                  className="flex h-10 items-center gap-1.5 rounded-lg bg-surface px-4 text-sm font-semibold text-ink hover:bg-surfaceHover"
+                >
+                  <RotateCcw className="h-4 w-4" /> Reset filters
+                </button>
+              </div>
+            }
+          />
+        )}
+
+        {!loading && !error && total > 0 && (
+          <div className="mt-8 flex items-center justify-between">
+            <button
+              disabled={startIndex === 0}
+              onClick={() => updateParam('startIndex', String(Math.max(0, startIndex - limit)))}
+              className="flex h-11 items-center rounded-lg bg-surface px-4 text-sm font-medium text-ink hover:bg-surfaceHover disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-muted">
+              {startIndex + 1}–{Math.min(startIndex + items.length, total)} of {total}
+            </span>
+            <button
+              disabled={startIndex + limit >= total}
+              onClick={() => updateParam('startIndex', String(startIndex + limit))}
+              className="flex h-11 items-center rounded-lg bg-surface px-4 text-sm font-medium text-ink hover:bg-surfaceHover disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
