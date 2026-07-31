@@ -33,6 +33,25 @@ export interface JellyfinItem {
   MediaStreams?: MediaStream[];
   MediaSources?: MediaSource[];
   Path?: string;
+  Chapters?: ChapterInfo[];
+  /** Keyed by MediaSourceId, then by tile image width (as a string). */
+  Trickplay?: Record<string, Record<string, TrickplayInfo>>;
+}
+
+export interface ChapterInfo {
+  StartPositionTicks: number;
+  Name?: string;
+  ImageTag?: string;
+}
+
+export interface TrickplayInfo {
+  Width: number;
+  Height: number;
+  TileWidth: number;
+  TileHeight: number;
+  ThumbnailCount: number;
+  Interval: number;
+  Bandwidth?: number;
 }
 
 export interface JellyfinPerson {

@@ -1,4 +1,4 @@
-import type { JellyfinUser, JellyfinItem, JellyfinItemsResponse, PlaybackInfo } from './types';
+import type { JellyfinUser, JellyfinItem, JellyfinItemsResponse, PlaybackInfo, TrickplayInfo } from './types';
 
 const JELLYFIN_URL = import.meta.env.VITE_JELLYFIN_URL || 'http://localhost:8096';
 const APP_NAME = import.meta.env.VITE_JELLYFIN_APP_NAME || 'JellyStream';
@@ -115,7 +115,7 @@ export async function fetchItems(
 }
 
 export async function fetchItem(token: string, userId: string, itemId: string): Promise<JellyfinItem> {
-  return request(`/Users/${userId}/Items/${itemId}`, { token }) as Promise<JellyfinItem>;
+  return request(`/Users/${userId}/Items/${itemId}?Fields=Chapters,Trickplay,MediaStreams`, { token }) as Promise<JellyfinItem>;
 }
 
 export async function fetchNextUp(token: string, userId: string, limit = 20): Promise<JellyfinItemsResponse> {
@@ -323,6 +323,37 @@ export function getStreamUrl(
 export function getDirectStreamUrl(itemId: string, token: string, mediaSourceId: string): string {
   const base = getBaseUrl();
   return `${base}/Videos/${itemId}/stream?Static=true&api_key=${encodeURIComponent(token)}&MediaSourceId=${encodeURIComponent(mediaSourceId)}`;
+}
+
+/**
+ * Picks the trickplay tile resolution to use for scrub previews: the highest resolution
+ * that's still <= ~20% of the screen width, ported from Jellyfin's own web client logic.
+ */
+export function selectTrickplayResolution(
+  resolutions: Record<string, TrickplayInfo> | undefined
+): TrickplayInfo | null {
+  if (!resolutions) return null;
+  const maxWidth = window.screen.width * (window.devicePixelRatio || 1) * 0.2;
+  let best: TrickplayInfo | null = null;
+  for (const info of Object.values(resolutions)) {
+    if (!best || (info.Width < best.Width && best.Width > maxWidth) || (info.Width > best.Width && info.Width <= maxWidth)) {
+      best = info;
+    }
+  }
+  return best;
+}
+
+/** Builds the URL for a trickplay tile image (a grid of TileWidth x TileHeight thumbnails). */
+export function getTrickplayTileUrl(
+  itemId: string,
+  token: string,
+  mediaSourceId: string,
+  width: number,
+  tileIndex: number
+): string {
+  const base = getBaseUrl();
+  const query = new URLSearchParams({ ApiKey: token, MediaSourceId: mediaSourceId });
+  return `${base}/Videos/${itemId}/Trickplay/${width}/${tileIndex}.jpg?${query.toString()}`;
 }
 
 export function ticksToMinutes(ticks?: number): number {

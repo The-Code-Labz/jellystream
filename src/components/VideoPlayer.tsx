@@ -1,13 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Maximize, Minimize, Pause, Play, Volume2, VolumeX } from 'lucide-react';
-import { reportProgress } from '@/lib/jellyfin';
-import type { MediaStream } from '@/lib/types';
+import { Maximize, Minimize, Pause, Play, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
+import { getTrickplayTileUrl, reportProgress } from '@/lib/jellyfin';
+import type { ChapterInfo, MediaStream, TrickplayInfo } from '@/lib/types';
 
 export interface QualityOption {
   label: string;
   maxStreamingBitrate?: number;
 }
+
+export interface NextUpInfo {
+  id: string;
+  title: string;
+  subtitle?: string;
+  image?: string;
+}
+
+const NEXT_UP_THRESHOLD_SECONDS = 30;
+const NEXT_UP_COUNTDOWN_SECONDS = 15;
 
 interface VideoPlayerProps {
   src: string;
@@ -16,11 +26,15 @@ interface VideoPlayerProps {
   mediaSourceId?: string;
   playSessionId?: string;
   streams?: MediaStream[];
+  chapters?: ChapterInfo[];
+  trickplayInfo?: TrickplayInfo | null;
   startPositionTicks?: number;
   poster?: string;
   qualityOptions?: QualityOption[];
   selectedQuality?: QualityOption;
   onQualityChange?: (option: QualityOption) => void;
+  nextUp?: NextUpInfo | null;
+  onPlayNext?: () => void;
 }
 
 export function VideoPlayer({
@@ -30,11 +44,15 @@ export function VideoPlayer({
   mediaSourceId,
   playSessionId,
   streams = [],
+  chapters = [],
+  trickplayInfo,
   startPositionTicks,
   poster,
   qualityOptions = [],
   selectedQuality,
   onQualityChange,
+  nextUp,
+  onPlayNext,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,7 +66,13 @@ export function VideoPlayer({
   const [selectedAudio, setSelectedAudio] = useState<number | undefined>(undefined);
   const [selectedSubtitle, setSelectedSubtitle] = useState<number | undefined>(undefined);
   const [scrubbing, setScrubbing] = useState(false);
+  const [previewTime, setPreviewTime] = useState<number | null>(null);
+  const [previewRatio, setPreviewRatio] = useState(0);
+  const [showNextUp, setShowNextUp] = useState(false);
+  const [nextUpCountdown, setNextUpCountdown] = useState(NEXT_UP_COUNTDOWN_SECONDS);
   const hlsRef = useRef<Hls | null>(null);
+  const dismissedNextUpRef = useRef(false);
+  const nextUpFiredRef = useRef(false);
 
   const audioStreams = streams.filter((s) => s.Type === 'Audio');
   const subtitleStreams = streams.filter((s) => s.Type === 'Subtitle');
@@ -106,6 +130,49 @@ export function VideoPlayer({
 
     return () => clearInterval(interval);
   }, [itemId, token, playSessionId, mediaSourceId]);
+
+  // Reset "up next" state whenever we load a new source (i.e. a different episode).
+  useEffect(() => {
+    setShowNextUp(false);
+    setNextUpCountdown(NEXT_UP_COUNTDOWN_SECONDS);
+    dismissedNextUpRef.current = false;
+    nextUpFiredRef.current = false;
+  }, [src]);
+
+  const playNextNow = () => {
+    if (nextUpFiredRef.current) return;
+    nextUpFiredRef.current = true;
+    onPlayNext?.();
+  };
+
+  const dismissNextUp = () => {
+    dismissedNextUpRef.current = true;
+    setShowNextUp(false);
+  };
+
+  // Reveal the up-next card once we're within the last NEXT_UP_THRESHOLD_SECONDS of playback.
+  useEffect(() => {
+    if (!nextUp || dismissedNextUpRef.current || nextUpFiredRef.current || showNextUp) return;
+    if (duration > 0 && duration - progress <= NEXT_UP_THRESHOLD_SECONDS) {
+      setShowNextUp(true);
+    }
+  }, [progress, duration, nextUp, showNextUp]);
+
+  // Auto-advance countdown once the up-next card is showing.
+  useEffect(() => {
+    if (!showNextUp) return;
+    const interval = setInterval(() => {
+      setNextUpCountdown((c) => {
+        if (c <= 1) {
+          playNextNow();
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNextUp]);
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -168,25 +235,51 @@ export function VideoPlayer({
     }
   };
 
-  const timeFromClientX = (clientX: number) => {
+  const ratioFromClientX = (clientX: number) => {
     const bar = seekBarRef.current;
-    const video = videoRef.current;
-    if (!bar || !video || !isFinite(video.duration)) return 0;
+    if (!bar) return 0;
     const rect = bar.getBoundingClientRect();
-    const ratio = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
-    return ratio * video.duration;
+    return Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+  };
+
+  const timeFromClientX = (clientX: number) => {
+    const video = videoRef.current;
+    if (!video || !isFinite(video.duration)) return 0;
+    return ratioFromClientX(clientX) * video.duration;
+  };
+
+  const updatePreview = (clientX: number) => {
+    const video = videoRef.current;
+    if (!video || !isFinite(video.duration) || !video.duration) return;
+    setPreviewRatio(ratioFromClientX(clientX));
+    setPreviewTime(ratioFromClientX(clientX) * video.duration);
   };
 
   const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     setScrubbing(true);
     seekTo(timeFromClientX(e.clientX));
+    updatePreview(e.clientX);
+  };
+
+  const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    updatePreview(e.clientX);
+  };
+
+  const handleSeekPointerLeave = () => {
+    if (!scrubbing) setPreviewTime(null);
   };
 
   useEffect(() => {
     if (!scrubbing) return;
-    const onMove = (e: PointerEvent) => seekTo(timeFromClientX(e.clientX));
-    const onUp = () => setScrubbing(false);
+    const onMove = (e: PointerEvent) => {
+      seekTo(timeFromClientX(e.clientX));
+      updatePreview(e.clientX);
+    };
+    const onUp = () => {
+      setScrubbing(false);
+      setPreviewTime(null);
+    };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => {
@@ -195,6 +288,36 @@ export function VideoPlayer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrubbing]);
+
+  // Trickplay preview thumbnail for the hovered/scrubbed position, using Jellyfin's tile-grid layout.
+  const trickplayPreview = (() => {
+    if (previewTime === null || !trickplayInfo || !mediaSourceId) return null;
+    const currentTimeMs = previewTime * 1000;
+    const currentTile = Math.floor(currentTimeMs / trickplayInfo.Interval);
+    const tileSize = trickplayInfo.TileWidth * trickplayInfo.TileHeight;
+    const tileIndex = Math.floor(currentTile / tileSize);
+    const tileOffset = currentTile % tileSize;
+    const offsetX = -(tileOffset % trickplayInfo.TileWidth) * trickplayInfo.Width;
+    const offsetY = -Math.floor(tileOffset / trickplayInfo.TileWidth) * trickplayInfo.Height;
+    return {
+      url: getTrickplayTileUrl(itemId, token, mediaSourceId, trickplayInfo.Width, tileIndex),
+      offsetX,
+      offsetY,
+      width: trickplayInfo.Width,
+      height: trickplayInfo.Height,
+    };
+  })();
+
+  const previewChapterName = (() => {
+    if (previewTime === null || chapters.length === 0) return '';
+    const positionTicks = previewTime * 10_000_000;
+    let name = '';
+    for (const chapter of chapters) {
+      if (positionTicks < chapter.StartPositionTicks) break;
+      name = chapter.Name || '';
+    }
+    return name;
+  })();
 
   // Keyboard hotkeys: space/k play-pause, arrows/j/l seek, up/down volume, m mute, f fullscreen.
   useEffect(() => {
@@ -278,13 +401,44 @@ export function VideoPlayer({
         onTimeUpdate={onTimeUpdate}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        onEnded={() => {
+          if (nextUp) playNextNow();
+        }}
         playsInline
       />
+
+      {nextUp && showNextUp && (
+        <div className="absolute bottom-24 right-4 z-20 w-72 rounded-lg bg-[#141414] p-3 shadow-2xl ring-1 ring-white/10 sm:w-80">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted">Next Episode</span>
+            <button onClick={dismissNextUp} aria-label="Dismiss next episode" className="text-white/60 hover:text-white">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="mt-2 flex gap-3">
+            {nextUp.image && (
+              <img src={nextUp.image} alt="" className="h-16 w-28 flex-shrink-0 rounded object-cover" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white">{nextUp.title}</p>
+              {nextUp.subtitle && <p className="truncate text-xs text-white/60">{nextUp.subtitle}</p>}
+            </div>
+          </div>
+          <button
+            onClick={playNextNow}
+            className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded bg-white text-sm font-semibold text-black hover:bg-white/90"
+          >
+            <SkipForward className="h-4 w-4 fill-black" /> Play now ({nextUpCountdown}s)
+          </button>
+        </div>
+      )}
 
       <div className="player-controls absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 transition-opacity duration-220 group-hover:opacity-100 group-focus-within:opacity-100">
         <div
           ref={seekBarRef}
           onPointerDown={handleSeekPointerDown}
+          onPointerMove={handleSeekPointerMove}
+          onPointerLeave={handleSeekPointerLeave}
           role="slider"
           aria-label="Seek"
           aria-valuemin={0}
@@ -293,6 +447,44 @@ export function VideoPlayer({
           className="group/seek relative mb-3 h-1 cursor-pointer rounded bg-white/20 py-2"
           style={{ marginTop: '-8px' }}
         >
+          {previewTime !== null && (
+            <div
+              className="pointer-events-none absolute bottom-full z-10 mb-2 -translate-x-1/2 overflow-hidden rounded bg-black shadow-xl ring-1 ring-white/20"
+              style={{
+                left: `${Math.min(Math.max(previewRatio * 100, 6), 94)}%`,
+                width: trickplayPreview ? trickplayPreview.width : undefined,
+              }}
+            >
+              {trickplayPreview && (
+                <div
+                  style={{
+                    width: trickplayPreview.width,
+                    height: trickplayPreview.height,
+                    backgroundImage: `url('${trickplayPreview.url}')`,
+                    backgroundPositionX: trickplayPreview.offsetX,
+                    backgroundPositionY: trickplayPreview.offsetY,
+                  }}
+                />
+              )}
+              <div className="px-2 py-1 text-center text-[11px] font-medium text-white">
+                {previewChapterName && <div className="truncate text-white/70">{previewChapterName}</div>}
+                {formatTime(previewTime)}
+              </div>
+            </div>
+          )}
+
+          {chapters.map((chapter, i) => {
+            const ratio = duration ? chapter.StartPositionTicks / 10_000_000 / duration : 0;
+            if (i === 0 || ratio <= 0 || ratio >= 1) return null;
+            return (
+              <div
+                key={chapter.StartPositionTicks}
+                className="pointer-events-none absolute top-0 h-1 w-px bg-black/50"
+                style={{ left: `${ratio * 100}%` }}
+              />
+            );
+          })}
+
           <div className="pointer-events-none h-1 w-full rounded bg-white/20">
             <div
               className="h-full rounded bg-accent"
