@@ -1,21 +1,32 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchItem, getPlaybackInfo, getStreamUrl, getImageUrl } from '@/lib/jellyfin';
-import { VideoPlayer } from '@/components/VideoPlayer';
+import { fetchItem, getPlaybackInfo, getStreamUrl, getImageUrl, resolveMediaUrl, stopEncoding } from '@/lib/jellyfin';
+import { VideoPlayer, type QualityOption } from '@/components/VideoPlayer';
 import { SkeletonPlayer } from '@/components/Skeleton';
 import type { JellyfinItem, MediaSource } from '@/lib/types';
+
+const QUALITY_OPTIONS: QualityOption[] = [
+  { label: 'Auto', maxStreamingBitrate: undefined },
+  { label: '1080p', maxStreamingBitrate: 8_000_000 },
+  { label: '720p', maxStreamingBitrate: 4_000_000 },
+  { label: '480p', maxStreamingBitrate: 2_000_000 },
+  { label: '360p', maxStreamingBitrate: 800_000 },
+];
 
 export function Watch() {
   const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [item, setItem] = useState<JellyfinItem | null>(null);
   const [source, setSource] = useState<MediaSource | null>(null);
+  const [playSessionId, setPlaySessionId] = useState('');
+  const [quality, setQuality] = useState<QualityOption>(QUALITY_OPTIONS[0]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const prevSessionRef = useRef<{ token: string; playSessionId: string } | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bitrate?: number) => {
     if (!user || !id) return;
     setLoading(true);
     setError('');
@@ -23,13 +34,14 @@ export function Watch() {
     try {
       const detail = await fetchItem(user.AccessToken, user.Id, id);
       setItem(detail);
-      const info = await getPlaybackInfo(user.AccessToken, user.Id, id);
+      const info = await getPlaybackInfo(user.AccessToken, user.Id, id, bitrate);
       const best = info.MediaSources?.[0];
       if (!best) {
         setError('No playable media source was found for this title.');
         return;
       }
       setSource(best);
+      setPlaySessionId(info.PlaySessionId || '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load video.');
     } finally {
@@ -38,11 +50,39 @@ export function Watch() {
   }, [user, id]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    load(quality.maxStreamingBitrate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user]);
+
+  // Stop the server-side transcode job whenever we leave this session (unmount, item change, quality change).
+  useEffect(() => {
+    if (user && playSessionId) {
+      prevSessionRef.current = { token: user.AccessToken, playSessionId };
+    }
+    return () => {
+      const prev = prevSessionRef.current;
+      if (prev) stopEncoding(prev.token, prev.playSessionId);
+    };
+  }, [user, playSessionId]);
+
+  const handleQualityChange = (next: QualityOption) => {
+    setQuality(next);
+    load(next.maxStreamingBitrate);
+  };
 
   const title = item ? (item.SeriesName ? `${item.SeriesName}: ${item.Name}` : item.Name) : 'This title';
   const backHref = item ? `/item/${item.SeriesId || item.Id}` : '/';
+
+  const buildSrc = () => {
+    if (!source || !id || !user) return '';
+    if (source.SupportsDirectStream) {
+      return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate);
+    }
+    if (source.TranscodingUrl) {
+      return resolveMediaUrl(source.TranscodingUrl);
+    }
+    return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate);
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-[#050607]">
@@ -69,7 +109,7 @@ export function Watch() {
                 Back to details
               </Link>
               <button
-                onClick={load}
+                onClick={() => load(quality.maxStreamingBitrate)}
                 className="flex h-11 items-center rounded-lg bg-accent px-5 text-sm font-semibold text-background hover:bg-accentHover"
               >
                 Try again
@@ -81,18 +121,17 @@ export function Watch() {
         ) : (
           <div className="aspect-video max-h-[calc(100vh-56px)] w-full">
             <VideoPlayer
-              src={
-                source.SupportsDirectStream
-                  ? getStreamUrl(id!, user!.AccessToken, source.Id)
-                  : source.TranscodingUrl
-                  ? `${import.meta.env.VITE_JELLYFIN_URL || ''}${source.TranscodingUrl}`
-                  : getStreamUrl(id!, user!.AccessToken, source.Id)
-              }
+              src={buildSrc()}
               itemId={id!}
               token={user!.AccessToken}
+              mediaSourceId={source.Id}
+              playSessionId={playSessionId}
               streams={item.MediaStreams || []}
               startPositionTicks={item.UserData?.PlaybackPositionTicks}
               poster={getImageUrl(item.Id, 'Primary', { maxWidth: 1280 })}
+              qualityOptions={QUALITY_OPTIONS}
+              selectedQuality={quality}
+              onQualityChange={handleQualityChange}
             />
           </div>
         )}

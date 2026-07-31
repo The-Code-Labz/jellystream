@@ -4,16 +4,38 @@ import { Maximize, Minimize, Pause, Play, Volume2, VolumeX } from 'lucide-react'
 import { reportProgress } from '@/lib/jellyfin';
 import type { MediaStream } from '@/lib/types';
 
+export interface QualityOption {
+  label: string;
+  maxStreamingBitrate?: number;
+}
+
 interface VideoPlayerProps {
   src: string;
   itemId: string;
   token: string;
+  mediaSourceId?: string;
+  playSessionId?: string;
   streams?: MediaStream[];
   startPositionTicks?: number;
   poster?: string;
+  qualityOptions?: QualityOption[];
+  selectedQuality?: QualityOption;
+  onQualityChange?: (option: QualityOption) => void;
 }
 
-export function VideoPlayer({ src, itemId, token, streams = [], startPositionTicks, poster }: VideoPlayerProps) {
+export function VideoPlayer({
+  src,
+  itemId,
+  token,
+  mediaSourceId,
+  playSessionId,
+  streams = [],
+  startPositionTicks,
+  poster,
+  qualityOptions = [],
+  selectedQuality,
+  onQualityChange,
+}: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -25,16 +47,13 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
   const [selectedAudio, setSelectedAudio] = useState<number | undefined>(undefined);
   const [selectedSubtitle, setSelectedSubtitle] = useState<number | undefined>(undefined);
   const hlsRef = useRef<Hls | null>(null);
-  const playSessionRef = useRef<string>('');
 
   const audioStreams = streams.filter((s) => s.Type === 'Audio');
   const subtitleStreams = streams.filter((s) => s.Type === 'Subtitle');
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
-
-    playSessionRef.current = crypto.randomUUID();
+    if (!video || !src) return;
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -48,6 +67,12 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
           video.currentTime = startPositionTicks / 10_000_000;
         }
       });
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (data.fatal) {
+          // eslint-disable-next-line no-console
+          console.error('HLS fatal error', data.type, data.details);
+        }
+      });
       hlsRef.current = hls;
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;
@@ -56,12 +81,13 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
 
     return () => {
       hlsRef.current?.destroy();
+      hlsRef.current = null;
     };
   }, [src, startPositionTicks]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !playSessionId) return;
 
     const interval = setInterval(() => {
       if (video.currentTime > 0 && !video.paused) {
@@ -70,13 +96,14 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
           itemId,
           video.currentTime * 10_000_000,
           video.currentTime >= video.duration - 5,
-          playSessionRef.current
+          playSessionId,
+          mediaSourceId
         ).catch(() => null);
       }
     }, 30_000);
 
     return () => clearInterval(interval);
-  }, [itemId, token]);
+  }, [itemId, token, playSessionId, mediaSourceId]);
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -182,6 +209,22 @@ export function VideoPlayer({ src, itemId, token, streams = [], startPositionTic
           </span>
 
           <div className="ml-auto flex items-center gap-2">
+            {qualityOptions.length > 1 && (
+              <select
+                value={selectedQuality?.label ?? qualityOptions[0].label}
+                onChange={(e) => {
+                  const next = qualityOptions.find((q) => q.label === e.target.value);
+                  if (next) onQualityChange?.(next);
+                }}
+                aria-label="Resolution"
+                className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
+              >
+                {qualityOptions.map((q) => (
+                  <option key={q.label} value={q.label}>{q.label}</option>
+                ))}
+              </select>
+            )}
+
             {audioStreams.length > 1 && (
               <select
                 value={selectedAudio}

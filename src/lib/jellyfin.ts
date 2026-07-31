@@ -10,7 +10,7 @@ function getBaseUrl(): string {
   return JELLYFIN_URL.replace(/\/$/, '');
 }
 
-function getDeviceId(): string {
+export function getDeviceId(): string {
   let id = localStorage.getItem('jellyfin-device-id');
   if (!id) {
     id = crypto.randomUUID();
@@ -18,6 +18,52 @@ function getDeviceId(): string {
   }
   return id;
 }
+
+const DEVICE_PROFILE = {
+  MaxStaticBitrate: 100000000,
+  MusicStreamingTranscodingBitrate: 384000,
+  DirectPlayProfiles: [
+    { Container: 'mp4,m4v', Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,opus,flac,vorbis' },
+    { Container: 'mkv', Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,opus,flac,vorbis' },
+    { Container: 'webm', Type: 'Video', VideoCodec: 'vp8,vp9,av1', AudioCodec: 'vorbis,opus' },
+  ],
+  TranscodingProfiles: [
+    {
+      Container: 'ts',
+      Type: 'Video',
+      AudioCodec: 'aac,mp3',
+      VideoCodec: 'h264',
+      Context: 'Streaming',
+      Protocol: 'hls',
+      MaxAudioChannels: '6',
+      MinSegments: 1,
+      BreakOnNonKeyFrames: true,
+    },
+    {
+      Container: 'aac',
+      Type: 'Audio',
+      AudioCodec: 'aac',
+      Context: 'Streaming',
+      Protocol: 'hls',
+      MaxAudioChannels: '2',
+    },
+  ],
+  CodecProfiles: [
+    {
+      Type: 'Video',
+      Codec: 'h264',
+      Conditions: [
+        { Condition: 'NotEquals', Property: 'IsAnamorphic', Value: 'true', IsRequired: false },
+        { Condition: 'EqualsAny', Property: 'VideoProfile', Value: 'high|main|baseline|constrained baseline', IsRequired: false },
+        { Condition: 'LessThanEqual', Property: 'VideoLevel', Value: '51', IsRequired: false },
+      ],
+    },
+  ],
+  SubtitleProfiles: [
+    { Format: 'vtt', Method: 'External' },
+    { Format: 'srt', Method: 'External' },
+  ],
+};
 
 function authHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {
@@ -169,8 +215,32 @@ export async function searchItems(token: string, userId: string, query: string, 
   });
 }
 
-export async function getPlaybackInfo(token: string, userId: string, itemId: string): Promise<PlaybackInfo> {
-  return request(`/Items/${itemId}/PlaybackInfo?UserId=${userId}`, { token }) as Promise<PlaybackInfo>;
+export async function getPlaybackInfo(
+  token: string,
+  userId: string,
+  itemId: string,
+  maxStreamingBitrate?: number
+): Promise<PlaybackInfo> {
+  return request(`/Items/${itemId}/PlaybackInfo?UserId=${userId}`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({
+      UserId: userId,
+      StartTimeTicks: 0,
+      IsPlayback: true,
+      AutoOpenLiveStream: true,
+      MediaSourceId: itemId,
+      MaxStreamingBitrate: maxStreamingBitrate,
+      DeviceProfile: { ...DEVICE_PROFILE, MaxStreamingBitrate: maxStreamingBitrate ?? 120000000 },
+    }),
+  }) as Promise<PlaybackInfo>;
+}
+
+export async function stopEncoding(token: string, playSessionId: string): Promise<void> {
+  await request(`/Videos/ActiveEncodings?DeviceId=${encodeURIComponent(getDeviceId())}&PlaySessionId=${encodeURIComponent(playSessionId)}`, {
+    method: 'DELETE',
+    token,
+  }).catch(() => null);
 }
 
 export async function markPlayed(token: string, userId: string, itemId: string, played: boolean): Promise<void> {
@@ -192,19 +262,25 @@ export async function reportProgress(
   itemId: string,
   positionTicks: number,
   played: boolean,
-  playSessionId?: string
+  playSessionId?: string,
+  mediaSourceId?: string
 ): Promise<void> {
   await request('/Sessions/Playing/Progress', {
     method: 'POST',
     token,
     body: JSON.stringify({
       ItemId: itemId,
+      MediaSourceId: mediaSourceId || itemId,
       PositionTicks: Math.round(positionTicks),
       IsPaused: false,
       PlaySessionId: playSessionId || '',
       Played: played,
     }),
   });
+}
+
+export function resolveMediaUrl(path: string): string {
+  return `${getBaseUrl()}${path}`;
 }
 
 export function getImageUrl(itemId: string, type: 'Primary' | 'Backdrop' | 'Logo' = 'Primary', options: { maxWidth?: number; tag?: string } = {}): string {
@@ -216,11 +292,26 @@ export function getImageUrl(itemId: string, type: 'Primary' | 'Backdrop' | 'Logo
   return `${base}/Items/${itemId}/Images/${type}${qs ? `?${qs}` : ''}`;
 }
 
-export function getStreamUrl(itemId: string, token: string, mediaSourceId?: string): string {
+export function getStreamUrl(
+  itemId: string,
+  token: string,
+  mediaSourceId?: string,
+  playSessionId?: string,
+  maxStreamingBitrate?: number
+): string {
   const base = getBaseUrl();
-  let url = `${base}/Videos/${itemId}/master.m3u8?api_key=${encodeURIComponent(token)}`;
-  if (mediaSourceId) url += `&MediaSourceId=${encodeURIComponent(mediaSourceId)}`;
-  return url;
+  const query = new URLSearchParams({
+    api_key: token,
+    DeviceId: getDeviceId(),
+    VideoCodec: 'h264',
+    AudioCodec: 'aac,mp3',
+    TranscodingMaxAudioChannels: '6',
+    SegmentContainer: 'ts',
+  });
+  if (mediaSourceId) query.set('MediaSourceId', mediaSourceId);
+  if (playSessionId) query.set('PlaySessionId', playSessionId);
+  if (maxStreamingBitrate) query.set('MaxStreamingBitrate', String(maxStreamingBitrate));
+  return `${base}/Videos/${itemId}/master.m3u8?${query.toString()}`;
 }
 
 export function getDirectStreamUrl(itemId: string, token: string, mediaSourceId: string): string {
