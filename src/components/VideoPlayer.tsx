@@ -38,6 +38,7 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const seekBarRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -46,6 +47,7 @@ export function VideoPlayer({
   const [fullscreen, setFullscreen] = useState(false);
   const [selectedAudio, setSelectedAudio] = useState<number | undefined>(undefined);
   const [selectedSubtitle, setSelectedSubtitle] = useState<number | undefined>(undefined);
+  const [scrubbing, setScrubbing] = useState(false);
   const hlsRef = useRef<Hls | null>(null);
 
   const audioStreams = streams.filter((s) => s.Type === 'Audio');
@@ -134,9 +136,125 @@ export function VideoPlayer({
     }
   };
 
-  const onTimeUpdate = () => {
+  useEffect(() => {
+    const onFsChange = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const seekTo = (time: number) => {
+    const video = videoRef.current;
+    if (!video || !isFinite(video.duration)) return;
+    const clamped = Math.min(Math.max(time, 0), video.duration);
+    video.currentTime = clamped;
+    setProgress(clamped);
+  };
+
+  const seekBy = (delta: number) => {
     const video = videoRef.current;
     if (!video) return;
+    seekTo(video.currentTime + delta);
+  };
+
+  const changeVolume = (delta: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const next = Math.min(Math.max(video.volume + delta, 0), 1);
+    video.volume = next;
+    setVolume(next);
+    if (next > 0 && video.muted) {
+      video.muted = false;
+      setMuted(false);
+    }
+  };
+
+  const timeFromClientX = (clientX: number) => {
+    const bar = seekBarRef.current;
+    const video = videoRef.current;
+    if (!bar || !video || !isFinite(video.duration)) return 0;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+    return ratio * video.duration;
+  };
+
+  const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setScrubbing(true);
+    seekTo(timeFromClientX(e.clientX));
+  };
+
+  useEffect(() => {
+    if (!scrubbing) return;
+    const onMove = (e: PointerEvent) => seekTo(timeFromClientX(e.clientX));
+    const onUp = () => setScrubbing(false);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrubbing]);
+
+  // Keyboard hotkeys: space/k play-pause, arrows/j/l seek, up/down volume, m mute, f fullscreen.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+      if (!containerRef.current) return;
+
+      switch (e.key) {
+        case ' ':
+        case 'k':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          seekBy(5);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          seekBy(-5);
+          break;
+        case 'l':
+          e.preventDefault();
+          seekBy(10);
+          break;
+        case 'j':
+          e.preventDefault();
+          seekBy(-10);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          changeVolume(0.05);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          changeVolume(-0.05);
+          break;
+        case 'm':
+          e.preventDefault();
+          toggleMute();
+          break;
+        case 'f':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        default:
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video || scrubbing) return;
     setProgress(video.currentTime);
     setDuration(video.duration || 0);
   };
@@ -151,7 +269,7 @@ export function VideoPlayer({
   };
 
   return (
-    <div ref={containerRef} className="group relative h-full w-full bg-black">
+    <div ref={containerRef} tabIndex={0} className="group relative h-full w-full bg-black outline-none">
       <video
         ref={videoRef}
         poster={poster}
@@ -164,10 +282,26 @@ export function VideoPlayer({
       />
 
       <div className="player-controls absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 transition-opacity duration-220 group-hover:opacity-100 group-focus-within:opacity-100">
-        <div className="mb-3 h-1 cursor-pointer rounded bg-white/20">
+        <div
+          ref={seekBarRef}
+          onPointerDown={handleSeekPointerDown}
+          role="slider"
+          aria-label="Seek"
+          aria-valuemin={0}
+          aria-valuemax={duration}
+          aria-valuenow={progress}
+          className="group/seek relative mb-3 h-1 cursor-pointer rounded bg-white/20 py-2"
+          style={{ marginTop: '-8px' }}
+        >
+          <div className="pointer-events-none h-1 w-full rounded bg-white/20">
+            <div
+              className="h-full rounded bg-accent"
+              style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
+            />
+          </div>
           <div
-            className="h-full bg-accent"
-            style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
+            className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full bg-accent opacity-0 group-hover/seek:opacity-100"
+            style={{ left: `${duration ? (progress / duration) * 100 : 0}%` }}
           />
         </div>
 
