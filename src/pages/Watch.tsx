@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Check, ListVideo, SkipBack, SkipForward, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchItem, fetchEpisodes, getPlaybackInfo, getStreamUrl, getImageUrl, resolveMediaUrl, selectTrickplayResolution, stopEncoding } from '@/lib/jellyfin';
-import { VideoPlayer, type QualityOption, type NextUpInfo } from '@/components/VideoPlayer';
+import { VideoPlayer, type QualityOption, type NextUpInfo, type VideoPlayerHandle } from '@/components/VideoPlayer';
 import { SkeletonPlayer } from '@/components/Skeleton';
 import type { JellyfinItem, MediaSource } from '@/lib/types';
 
@@ -29,6 +29,11 @@ export function Watch() {
   const [loading, setLoading] = useState(true);
   const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
   const [showEpisodes, setShowEpisodes] = useState(false);
+  // Overrides the server-reported resume position when we tear down/reload the player for a
+  // quality/audio/subtitle change — the server's UserData.PlaybackPositionTicks is only as
+  // fresh as the last 30s progress report, so relying on it alone visibly rewinds playback.
+  const [resumeTicks, setResumeTicks] = useState<number | undefined>(undefined);
+  const playerRef = useRef<VideoPlayerHandle>(null);
   const prevSessionRef = useRef<{ token: string; playSessionId: string } | null>(null);
 
   const load = useCallback(async (bitrate?: number, audio?: number, subtitle?: number) => {
@@ -59,9 +64,11 @@ export function Watch() {
   }, [user, id]);
 
   useEffect(() => {
-    setAudioIndex(undefined);
-    setSubtitleIndex(undefined);
-    load(quality.maxStreamingBitrate);
+    // Deliberately does NOT reset audioIndex/subtitleIndex here — the user's track choice should
+    // carry over to the next episode (Jellyfin will fall back to its own default if the index is
+    // invalid for this item). resumeTicks DOES reset: this is a different item's own saved position.
+    setResumeTicks(undefined);
+    load(quality.maxStreamingBitrate, audioIndex, subtitleIndex);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user]);
 
@@ -115,7 +122,15 @@ export function Watch() {
     };
   }, [user, playSessionId]);
 
+  // Capture the exact live position before tearing down the <video>/HLS instance for a settings
+  // change, so the reload resumes from here instead of the last (up to 30s stale) server report.
+  const captureResumePoint = () => {
+    const t = playerRef.current?.getCurrentTime();
+    if (t && t > 0) setResumeTicks(t * 10_000_000);
+  };
+
   const handleQualityChange = (next: QualityOption) => {
+    captureResumePoint();
     setQuality(next);
     load(next.maxStreamingBitrate, audioIndex, subtitleIndex);
   };
@@ -123,11 +138,13 @@ export function Watch() {
   // Switching audio/subtitle requires a fresh PlaybackInfo negotiation (new TranscodingUrl) —
   // Jellyfin bakes the selected streams into the transcode job, it isn't a client-side track swap.
   const handleAudioChange = (next: number) => {
+    captureResumePoint();
     setAudioIndex(next);
     load(quality.maxStreamingBitrate, next, subtitleIndex);
   };
 
   const handleSubtitleChange = (next: number | undefined) => {
+    captureResumePoint();
     setSubtitleIndex(next);
     load(quality.maxStreamingBitrate, audioIndex, next);
   };
@@ -260,6 +277,7 @@ export function Watch() {
         ) : (
           <div className="aspect-video max-h-[calc(100vh-56px)] w-full">
             <VideoPlayer
+              ref={playerRef}
               src={buildSrc()}
               itemId={id!}
               token={user!.AccessToken}
@@ -268,7 +286,7 @@ export function Watch() {
               streams={item.MediaStreams || []}
               chapters={item.Chapters || []}
               trickplayInfo={selectTrickplayResolution(item.Trickplay?.[source.Id])}
-              startPositionTicks={item.UserData?.PlaybackPositionTicks}
+              startPositionTicks={resumeTicks ?? item.UserData?.PlaybackPositionTicks}
               poster={getImageUrl(item.Id, 'Primary', { maxWidth: 1280 })}
               qualityOptions={QUALITY_OPTIONS}
               selectedQuality={quality}

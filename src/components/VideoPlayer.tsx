@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Maximize, Minimize, Pause, Play, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { getTrickplayTileUrl, reportProgress } from '@/lib/jellyfin';
@@ -42,7 +42,11 @@ interface VideoPlayerProps {
   onPlayNext?: () => void;
 }
 
-export function VideoPlayer({
+export interface VideoPlayerHandle {
+  getCurrentTime: () => number;
+}
+
+export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer({
   src,
   itemId,
   token,
@@ -62,7 +66,7 @@ export function VideoPlayer({
   onSubtitleChange,
   nextUp,
   onPlayNext,
-}: VideoPlayerProps) {
+}, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const seekBarRef = useRef<HTMLDivElement>(null);
@@ -88,6 +92,12 @@ export function VideoPlayer({
 
   const audioStreams = streams.filter((s) => s.Type === 'Audio');
   const subtitleStreams = streams.filter((s) => s.Type === 'Subtitle');
+
+  // Exposes the live playback position to the parent so it can be preserved across a
+  // quality/audio/subtitle change, which requires tearing down and reloading this <video>.
+  useImperativeHandle(ref, () => ({
+    getCurrentTime: () => videoRef.current?.currentTime ?? 0,
+  }));
 
   useEffect(() => {
     const video = videoRef.current;
@@ -677,4 +687,4 @@ export function VideoPlayer({
       </div>
     </div>
   );
-}
+});
