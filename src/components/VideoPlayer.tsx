@@ -18,6 +18,7 @@ export interface NextUpInfo {
 
 const NEXT_UP_THRESHOLD_SECONDS = 30;
 const NEXT_UP_COUNTDOWN_SECONDS = 15;
+const CONTROLS_HIDE_DELAY_MS = 3000;
 
 interface VideoPlayerProps {
   src: string;
@@ -76,9 +77,14 @@ export function VideoPlayer({
   const [previewRatio, setPreviewRatio] = useState(0);
   const [showNextUp, setShowNextUp] = useState(false);
   const [nextUpCountdown, setNextUpCountdown] = useState(NEXT_UP_COUNTDOWN_SECONDS);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const hlsRef = useRef<Hls | null>(null);
   const dismissedNextUpRef = useRef(false);
   const nextUpFiredRef = useRef(false);
+  const hideTimerRef = useRef<number | null>(null);
+  const hoveringControlsRef = useRef(false);
+  const scrubbingRef = useRef(false);
+  const playingRef = useRef(false);
 
   const audioStreams = streams.filter((s) => s.Type === 'Audio');
   const subtitleStreams = streams.filter((s) => s.Type === 'Subtitle');
@@ -215,6 +221,67 @@ export function VideoPlayer({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
+  // Netflix-style auto-hide: keep refs in sync so the hide timer always reads current state.
+  useEffect(() => {
+    playingRef.current = playing;
+  }, [playing]);
+  useEffect(() => {
+    scrubbingRef.current = scrubbing;
+  }, [scrubbing]);
+
+  const showControls = () => {
+    setControlsVisible(true);
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    if (playingRef.current && !scrubbingRef.current && !hoveringControlsRef.current) {
+      hideTimerRef.current = window.setTimeout(() => {
+        setControlsVisible(false);
+      }, CONTROLS_HIDE_DELAY_MS);
+    }
+  };
+
+  // Show controls (and restart/cancel the hide timer) whenever play state changes:
+  // pausing reveals them and keeps them visible; resuming kicks off the auto-hide countdown.
+  useEffect(() => {
+    showControls();
+    return () => {
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
+
+  // Reveal controls on any mouse movement, tap, or click over the player; re-arms the hide timer.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleActivity = () => showControls();
+    container.addEventListener('mousemove', handleActivity);
+    container.addEventListener('touchstart', handleActivity);
+    container.addEventListener('click', handleActivity);
+    return () => {
+      container.removeEventListener('mousemove', handleActivity);
+      container.removeEventListener('touchstart', handleActivity);
+      container.removeEventListener('click', handleActivity);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleControlsMouseEnter = () => {
+    hoveringControlsRef.current = true;
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    setControlsVisible(true);
+  };
+
+  const handleControlsMouseLeave = () => {
+    hoveringControlsRef.current = false;
+    showControls();
+  };
+
   const seekTo = (time: number) => {
     const video = videoRef.current;
     if (!video || !isFinite(video.duration)) return;
@@ -333,6 +400,8 @@ export function VideoPlayer({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
       if (!containerRef.current) return;
 
+      showControls();
+
       switch (e.key) {
         case ' ':
         case 'k':
@@ -398,7 +467,13 @@ export function VideoPlayer({
   };
 
   return (
-    <div ref={containerRef} tabIndex={0} className="group relative h-full w-full bg-black outline-none">
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      className={`group relative h-full w-full bg-black outline-none ${
+        !controlsVisible && playing ? 'cursor-none' : ''
+      }`}
+    >
       <video
         ref={videoRef}
         poster={poster}
@@ -439,7 +514,13 @@ export function VideoPlayer({
         </div>
       )}
 
-      <div className="player-controls absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 transition-opacity duration-220 group-hover:opacity-100 group-focus-within:opacity-100">
+      <div
+        onMouseEnter={handleControlsMouseEnter}
+        onMouseLeave={handleControlsMouseLeave}
+        className={`player-controls absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 transition-opacity duration-220 ${
+          controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+      >
         <div
           ref={seekBarRef}
           onPointerDown={handleSeekPointerDown}
