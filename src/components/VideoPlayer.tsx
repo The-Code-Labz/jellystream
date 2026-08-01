@@ -33,6 +33,10 @@ interface VideoPlayerProps {
   qualityOptions?: QualityOption[];
   selectedQuality?: QualityOption;
   onQualityChange?: (option: QualityOption) => void;
+  selectedAudioIndex?: number;
+  onAudioChange?: (index: number) => void;
+  selectedSubtitleIndex?: number;
+  onSubtitleChange?: (index: number | undefined) => void;
   nextUp?: NextUpInfo | null;
   onPlayNext?: () => void;
 }
@@ -51,6 +55,10 @@ export function VideoPlayer({
   qualityOptions = [],
   selectedQuality,
   onQualityChange,
+  selectedAudioIndex,
+  onAudioChange,
+  selectedSubtitleIndex,
+  onSubtitleChange,
   nextUp,
   onPlayNext,
 }: VideoPlayerProps) {
@@ -63,8 +71,6 @@ export function VideoPlayer({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
-  const [selectedAudio, setSelectedAudio] = useState<number | undefined>(undefined);
-  const [selectedSubtitle, setSelectedSubtitle] = useState<number | undefined>(undefined);
   const [scrubbing, setScrubbing] = useState(false);
   const [previewTime, setPreviewTime] = useState<number | null>(null);
   const [previewRatio, setPreviewRatio] = useState(0);
@@ -553,8 +559,8 @@ export function VideoPlayer({
 
             {audioStreams.length > 1 && (
               <select
-                value={selectedAudio}
-                onChange={(e) => setSelectedAudio(Number(e.target.value))}
+                value={selectedAudioIndex ?? audioStreams[0]?.Index}
+                onChange={(e) => onAudioChange?.(Number(e.target.value))}
                 aria-label="Audio track"
                 className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
               >
@@ -566,12 +572,12 @@ export function VideoPlayer({
 
             {subtitleStreams.length > 0 && (
               <select
-                value={selectedSubtitle}
-                onChange={(e) => setSelectedSubtitle(Number(e.target.value))}
+                value={selectedSubtitleIndex ?? ''}
+                onChange={(e) => onSubtitleChange?.(e.target.value === '' ? undefined : Number(e.target.value))}
                 aria-label="Subtitles"
                 className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
               >
-                <option value={undefined}>Subtitles off</option>
+                <option value="">Subtitles off</option>
                 {subtitleStreams.map((s) => (
                   <option key={s.Index} value={s.Index}>{s.DisplayTitle || s.Language || `Subtitle ${s.Index}`}</option>
                 ))}

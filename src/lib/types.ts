@@ -79,6 +79,8 @@ export interface MediaSource {
   SupportsDirectStream?: boolean;
   SupportsDirectPlay?: boolean;
   TranscodingUrl?: string;
+  DefaultAudioStreamIndex?: number;
+  DefaultSubtitleStreamIndex?: number;
 }
 
 export interface PlaybackInfo {

@@ -219,7 +219,9 @@ export async function getPlaybackInfo(
   token: string,
   userId: string,
   itemId: string,
-  maxStreamingBitrate?: number
+  maxStreamingBitrate?: number,
+  audioStreamIndex?: number,
+  subtitleStreamIndex?: number
 ): Promise<PlaybackInfo> {
   return request(`/Items/${itemId}/PlaybackInfo?UserId=${userId}`, {
     method: 'POST',
@@ -231,6 +233,8 @@ export async function getPlaybackInfo(
       AutoOpenLiveStream: true,
       MediaSourceId: itemId,
       MaxStreamingBitrate: maxStreamingBitrate,
+      AudioStreamIndex: audioStreamIndex,
+      SubtitleStreamIndex: subtitleStreamIndex,
       // Note: MaxStaticBitrate (100Mbps, above) gates direct-play eligibility and is unaffected here.
       // This only caps the *transcode encode target* — when a transcode is forced for any reason
       // (subtitle burn-in, HDR tonemap, codec mismatch), Jellyfin aims VideoBitrate at
@@ -303,7 +307,9 @@ export function getStreamUrl(
   token: string,
   mediaSourceId?: string,
   playSessionId?: string,
-  maxStreamingBitrate?: number
+  maxStreamingBitrate?: number,
+  audioStreamIndex?: number,
+  subtitleStreamIndex?: number
 ): string {
   const base = getBaseUrl();
   const query = new URLSearchParams({
@@ -317,6 +323,8 @@ export function getStreamUrl(
   if (mediaSourceId) query.set('MediaSourceId', mediaSourceId);
   if (playSessionId) query.set('PlaySessionId', playSessionId);
   if (maxStreamingBitrate) query.set('MaxStreamingBitrate', String(maxStreamingBitrate));
+  if (audioStreamIndex !== undefined) query.set('AudioStreamIndex', String(audioStreamIndex));
+  if (subtitleStreamIndex !== undefined) query.set('SubtitleStreamIndex', String(subtitleStreamIndex));
   return `${base}/Videos/${itemId}/master.m3u8?${query.toString()}`;
 }
 

@@ -23,13 +23,15 @@ export function Watch() {
   const [source, setSource] = useState<MediaSource | null>(null);
   const [playSessionId, setPlaySessionId] = useState('');
   const [quality, setQuality] = useState<QualityOption>(QUALITY_OPTIONS[0]);
+  const [audioIndex, setAudioIndex] = useState<number | undefined>(undefined);
+  const [subtitleIndex, setSubtitleIndex] = useState<number | undefined>(undefined);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
   const [showEpisodes, setShowEpisodes] = useState(false);
   const prevSessionRef = useRef<{ token: string; playSessionId: string } | null>(null);
 
-  const load = useCallback(async (bitrate?: number) => {
+  const load = useCallback(async (bitrate?: number, audio?: number, subtitle?: number) => {
     if (!user || !id) return;
     setLoading(true);
     setError('');
@@ -37,7 +39,7 @@ export function Watch() {
     try {
       const detail = await fetchItem(user.AccessToken, user.Id, id);
       setItem(detail);
-      const info = await getPlaybackInfo(user.AccessToken, user.Id, id, bitrate);
+      const info = await getPlaybackInfo(user.AccessToken, user.Id, id, bitrate, audio, subtitle);
       const best = info.MediaSources?.[0];
       if (!best) {
         setError('No playable media source was found for this title.');
@@ -45,6 +47,10 @@ export function Watch() {
       }
       setSource(best);
       setPlaySessionId(info.PlaySessionId || '');
+      // On first load (no explicit selection yet) sync local state to whatever Jellyfin picked as default,
+      // so the dropdown reflects reality and subsequent switches send the right "from" index.
+      if (audio === undefined) setAudioIndex(best.DefaultAudioStreamIndex);
+      if (subtitle === undefined) setSubtitleIndex(best.DefaultSubtitleStreamIndex);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load video.');
     } finally {
@@ -53,6 +59,8 @@ export function Watch() {
   }, [user, id]);
 
   useEffect(() => {
+    setAudioIndex(undefined);
+    setSubtitleIndex(undefined);
     load(quality.maxStreamingBitrate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user]);
@@ -109,7 +117,19 @@ export function Watch() {
 
   const handleQualityChange = (next: QualityOption) => {
     setQuality(next);
-    load(next.maxStreamingBitrate);
+    load(next.maxStreamingBitrate, audioIndex, subtitleIndex);
+  };
+
+  // Switching audio/subtitle requires a fresh PlaybackInfo negotiation (new TranscodingUrl) —
+  // Jellyfin bakes the selected streams into the transcode job, it isn't a client-side track swap.
+  const handleAudioChange = (next: number) => {
+    setAudioIndex(next);
+    load(quality.maxStreamingBitrate, next, subtitleIndex);
+  };
+
+  const handleSubtitleChange = (next: number | undefined) => {
+    setSubtitleIndex(next);
+    load(quality.maxStreamingBitrate, audioIndex, next);
   };
 
   const title = item ? (item.SeriesName ? `${item.SeriesName}: ${item.Name}` : item.Name) : 'This title';
@@ -117,13 +137,15 @@ export function Watch() {
 
   const buildSrc = () => {
     if (!source || !id || !user) return '';
+    // TranscodingUrl already has the requested AudioStreamIndex/SubtitleStreamIndex baked in
+    // by Jellyfin (we sent them in the PlaybackInfo POST body) — nothing extra to append.
     if (source.SupportsDirectStream) {
-      return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate);
+      return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate, audioIndex, subtitleIndex);
     }
     if (source.TranscodingUrl) {
       return resolveMediaUrl(source.TranscodingUrl);
     }
-    return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate);
+    return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate, audioIndex, subtitleIndex);
   };
 
   return (
@@ -251,6 +273,10 @@ export function Watch() {
               qualityOptions={QUALITY_OPTIONS}
               selectedQuality={quality}
               onQualityChange={handleQualityChange}
+              selectedAudioIndex={audioIndex}
+              onAudioChange={handleAudioChange}
+              selectedSubtitleIndex={subtitleIndex}
+              onSubtitleChange={handleSubtitleChange}
               nextUp={nextUp}
               onPlayNext={() => nextEpisode && goToEpisode(nextEpisode.Id)}
             />
