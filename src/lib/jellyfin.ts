@@ -236,12 +236,14 @@ export async function getPlaybackInfo(
       AudioStreamIndex: audioStreamIndex,
       SubtitleStreamIndex: subtitleStreamIndex,
       // Note: MaxStaticBitrate (100Mbps, above) gates direct-play eligibility and is unaffected here.
-      // This only caps the *transcode encode target* — when a transcode is forced for any reason
+      // This caps the *transcode encode target* — when a transcode is forced for any reason
       // (subtitle burn-in, HDR tonemap, codec mismatch), Jellyfin aims VideoBitrate at
-      // (this value - audio bitrate). 120Mbps is not achievable in real time by a software x264
-      // encoder doing subtitle burn-in + tonemap, and Jellyfin returns 500 on segment requests
-      // when ffmpeg can't keep up. 20Mbps is a realistic real-time transcode ceiling.
-      DeviceProfile: { ...DEVICE_PROFILE, MaxStreamingBitrate: maxStreamingBitrate ?? 20000000 },
+      // (this value - audio bitrate). Previously this hard-floored Auto quality at 20Mbps for
+      // EVERY title, which starved high-bitrate 4K/HDR sources (forced macroblocking/downscale)
+      // even though hardware (NVENC) transcode has no trouble keeping up in real time. Auto now
+      // only caps at MaxStaticBitrate (100Mbps) as a sane upper bound — explicit quality presets
+      // (1080p/720p/etc.) still pass their own lower ceiling as before.
+      DeviceProfile: { ...DEVICE_PROFILE, MaxStreamingBitrate: maxStreamingBitrate ?? DEVICE_PROFILE.MaxStaticBitrate },
     }),
   }) as Promise<PlaybackInfo>;
 }
