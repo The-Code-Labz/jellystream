@@ -9,10 +9,10 @@ import type { JellyfinItem, MediaSource } from '@/lib/types';
 
 const QUALITY_OPTIONS: QualityOption[] = [
   { label: 'Auto', maxStreamingBitrate: undefined },
-  { label: '1080p', maxStreamingBitrate: 8_000_000 },
-  { label: '720p', maxStreamingBitrate: 4_000_000 },
-  { label: '480p', maxStreamingBitrate: 2_000_000 },
-  { label: '360p', maxStreamingBitrate: 800_000 },
+  { label: '1080p', maxStreamingBitrate: 20_000_000 },
+  { label: '720p', maxStreamingBitrate: 8_000_000 },
+  { label: '480p', maxStreamingBitrate: 4_000_000 },
+  { label: '360p', maxStreamingBitrate: 1_500_000 },
 ];
 
 export function Watch() {
