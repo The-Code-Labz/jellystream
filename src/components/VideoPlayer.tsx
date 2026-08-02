@@ -105,7 +105,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
     if (Hls.isSupported()) {
       const hls = new Hls({
-        capLevelToPlayerSize: true,
+        // capLevelToPlayerSize caps ABR level selection to the <video> element's CSS pixel
+        // size (times devicePixelRatio) rather than actual bandwidth — in a non-fullscreen/
+        // small player it silently locks onto a lower-resolution rendition, which the browser
+        // then upscales, producing exactly the "jagged/aliased, worse than the bitrate should
+        // look" artifacts reported. Disabled so level selection is bandwidth-driven only,
+        // matching how native Jellyfin clients behave.
+        capLevelToPlayerSize: false,
         maxBufferLength: 60,
       });
       hls.loadSource(src);
