@@ -59,10 +59,12 @@ const DEVICE_PROFILE = {
       ],
     },
   ],
-  SubtitleProfiles: [
-    { Format: 'vtt', Method: 'External' },
-    { Format: 'srt', Method: 'External' },
-  ],
+  // Deliberately empty: claiming 'External' support for vtt/srt here (as before) tells Jellyfin
+  // to hand back a sidecar subtitle URL instead of burning it into the video — but this player has
+  // no <track>/WebVTT rendering at all, so those subtitles silently never appeared. Leaving this
+  // empty means Jellyfin finds no matching profile for ANY subtitle format and falls back to
+  // server-side burn-in (Encode), the same proven path already used for .ass sources.
+  SubtitleProfiles: [],
 };
 
 function authHeaders(token?: string): Record<string, string> {

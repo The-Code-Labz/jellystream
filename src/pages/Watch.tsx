@@ -154,11 +154,15 @@ export function Watch() {
 
   const buildSrc = () => {
     if (!source || !id || !user) return '';
-    // TranscodingUrl already has the requested AudioStreamIndex/SubtitleStreamIndex baked in
-    // by Jellyfin (we sent them in the PlaybackInfo POST body) — nothing extra to append.
-    if (source.SupportsDirectStream) {
-      return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate, audioIndex, subtitleIndex);
-    }
+    // TranscodingUrl already has the requested bitrate/resolution/codec/AudioStreamIndex/
+    // SubtitleStreamIndex baked in by Jellyfin from the negotiated PlaybackInfo POST (full
+    // DeviceProfile). SupportsDirectStream only means the container/codec COULD be remuxed —
+    // it does NOT mean that's the method Jellyfin actually picked (audio channel downmix, our
+    // bitrate cap, or subtitle burn-in can still force a real transcode). Checking that flag
+    // first threw the negotiated URL away and fell back to an unnegotiated raw /master.m3u8
+    // request with no DeviceProfile, which Jellyfin then guessed wildly on (an unwarranted
+    // 416x234 downscale, confirmed in server logs) — always prefer TranscodingUrl when
+    // Jellyfin gave us one; only build our own URL if it genuinely didn't.
     if (source.TranscodingUrl) {
       return resolveMediaUrl(source.TranscodingUrl);
     }
