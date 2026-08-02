@@ -166,7 +166,9 @@ export function Watch() {
     if (source.TranscodingUrl) {
       return resolveMediaUrl(source.TranscodingUrl);
     }
-    return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate, audioIndex, subtitleIndex);
+    // Defense-in-depth: if we ever land here with Auto quality (no explicit cap), don't send
+    // an unbounded transcode request — fall back to the same 100Mbps ceiling PlaybackInfo uses.
+    return getStreamUrl(id, user.AccessToken, source.Id, playSessionId, quality.maxStreamingBitrate ?? 100_000_000, audioIndex, subtitleIndex);
   };
 
   return (

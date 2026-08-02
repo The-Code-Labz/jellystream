@@ -22,9 +22,15 @@ export function getDeviceId(): string {
 const DEVICE_PROFILE = {
   MaxStaticBitrate: 100000000,
   MusicStreamingTranscodingBitrate: 384000,
+  // NOTE: 'hevc' is deliberately EXCLUDED from VideoCodec here. Chromium/Brave/Firefox have no
+  // HEVC decode support in <video>/MSE (only Safari does). Claiming hevc direct-play support
+  // made Jellyfin's PlaybackInfo believe 10-bit HEVC bluray sources were directly playable,
+  // so it returned NO TranscodingUrl at all — the player then fell back to a raw, unnegotiated
+  // master.m3u8 request with no bitrate/DeviceProfile context, producing severe macroblocking
+  // (same failure family as the earlier 416x234 downscale bug, different trigger).
   DirectPlayProfiles: [
-    { Container: 'mp4,m4v', Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,opus,flac,vorbis' },
-    { Container: 'mkv', Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,opus,flac,vorbis' },
+    { Container: 'mp4,m4v', Type: 'Video', VideoCodec: 'h264,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,opus,flac,vorbis' },
+    { Container: 'mkv', Type: 'Video', VideoCodec: 'h264,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,opus,flac,vorbis' },
     { Container: 'webm', Type: 'Video', VideoCodec: 'vp8,vp9,av1', AudioCodec: 'vorbis,opus' },
   ],
   TranscodingProfiles: [
