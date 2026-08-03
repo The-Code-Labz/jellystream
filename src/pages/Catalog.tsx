@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RotateCcw } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useLibrary } from '@/context/LibraryContext';
 import { fetchMovies, fetchSeries, fetchItems, fetchGenres } from '@/lib/jellyfin';
 import { PosterGrid } from '@/components/PosterGrid';
 import { SkeletonPosterGrid } from '@/components/Skeleton';
@@ -16,6 +17,7 @@ const DEFAULT_SORT_ORDER = 'Ascending';
 
 export function Catalog({ type }: CatalogProps) {
   const { user } = useAuth();
+  const { libraryId } = useLibrary();
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<JellyfinItem[]>([]);
   const [genres, setGenres] = useState<string[]>([]);
@@ -30,6 +32,18 @@ export function Catalog({ type }: CatalogProps) {
   const startIndex = parseInt(searchParams.get('startIndex') || '0', 10);
   const limit = 48;
 
+  const prevLibraryId = useRef(libraryId);
+  useEffect(() => {
+    if (prevLibraryId.current !== libraryId) {
+      prevLibraryId.current = libraryId;
+      if (searchParams.has('startIndex')) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('startIndex');
+        setSearchParams(next);
+      }
+    }
+  }, [libraryId, searchParams, setSearchParams]);
+
   useEffect(() => {
     if (!user) return;
     async function load() {
@@ -43,6 +57,7 @@ export function Catalog({ type }: CatalogProps) {
           sortOrder,
           startIndex,
           limit,
+          libraryId: libraryId || undefined,
         };
         let res;
         if (type === 'Movie') res = await fetchMovies(user!.AccessToken, user!.Id, options);
@@ -53,6 +68,7 @@ export function Catalog({ type }: CatalogProps) {
             IncludeItemTypes: 'Movie,Series',
             ...(selectedGenre && { Genres: selectedGenre }),
             ...(selectedYear && { Years: parseInt(selectedYear, 10) }),
+            ...(libraryId && { ParentId: libraryId }),
             SortBy: sortBy,
             SortOrder: sortOrder,
             StartIndex: startIndex,
@@ -68,14 +84,14 @@ export function Catalog({ type }: CatalogProps) {
       }
     }
     load();
-  }, [user, type, selectedGenre, selectedYear, sortBy, sortOrder, startIndex]);
+  }, [user, type, selectedGenre, selectedYear, sortBy, sortOrder, startIndex, libraryId]);
 
   useEffect(() => {
     if (!user) return;
-    fetchGenres(user.AccessToken)
+    fetchGenres(user.AccessToken, libraryId || undefined)
       .then((g) => setGenres(g.Items.map((x) => x.Name).sort()))
       .catch(() => null);
-  }, [user]);
+  }, [user, libraryId]);
 
   const updateParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);

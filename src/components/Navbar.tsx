@@ -1,7 +1,8 @@
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Search, LogOut, Clapperboard, Tv, Home as HomeIcon, Film, Menu, X } from 'lucide-react';
+import { Search, LogOut, Clapperboard, Tv, Home as HomeIcon, Film, Menu, X, LibraryBig, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useLibrary } from '@/context/LibraryContext';
 
 const NAV_LINKS = [
   { to: '/', label: 'Home', icon: HomeIcon, end: true },
@@ -11,18 +12,22 @@ const NAV_LINKS = [
 
 export function Navbar() {
   const { user, logout } = useAuth();
+  const { libraries, libraryId, setLibraryId } = useLibrary();
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const accountButtonRef = useRef<HTMLButtonElement>(null);
+  const libraryRef = useRef<HTMLDivElement>(null);
+  const libraryButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -35,6 +40,7 @@ export function Navbar() {
     setSearchOpen(false);
     setMenuOpen(false);
     setAccountOpen(false);
+    setLibraryOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -59,6 +65,25 @@ export function Navbar() {
       document.removeEventListener('keydown', onKey);
     };
   }, [accountOpen]);
+
+  useEffect(() => {
+    if (!libraryOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (libraryRef.current && !libraryRef.current.contains(e.target as Node)) setLibraryOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLibraryOpen(false);
+        libraryButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [libraryOpen]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +128,57 @@ export function Navbar() {
               {label}
             </NavLink>
           ))}
+
+          {libraries.length > 1 && (
+            <div className="relative ml-2" ref={libraryRef}>
+              <button
+                ref={libraryButtonRef}
+                type="button"
+                onClick={() => setLibraryOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={libraryOpen}
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 text-xs font-semibold text-muted hover:bg-surfaceHover hover:text-ink"
+              >
+                <LibraryBig className="h-3.5 w-3.5" aria-hidden="true" />
+                {libraryId ? libraries.find((l) => l.Id === libraryId)?.Name || 'Library' : 'All Libraries'}
+                <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              {libraryOpen && (
+                <div
+                  role="menu"
+                  className="absolute left-0 top-11 w-56 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-xl"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setLibraryId('');
+                      setLibraryOpen(false);
+                    }}
+                    className={`flex w-full items-center px-4 py-2.5 text-left text-sm font-medium hover:bg-surfaceHover ${
+                      !libraryId ? 'text-accent' : 'text-ink'
+                    }`}
+                  >
+                    All Libraries
+                  </button>
+                  {libraries.map((lib) => (
+                    <button
+                      key={lib.Id}
+                      role="menuitem"
+                      onClick={() => {
+                        setLibraryId(lib.Id);
+                        setLibraryOpen(false);
+                      }}
+                      className={`flex w-full items-center px-4 py-2.5 text-left text-sm font-medium hover:bg-surfaceHover ${
+                        libraryId === lib.Id ? 'text-accent' : 'text-ink'
+                      }`}
+                    >
+                      {lib.Name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -216,6 +292,33 @@ export function Navbar() {
               </NavLink>
             ))}
           </div>
+
+          {libraries.length > 1 && (
+            <div className="mt-3 border-t border-border pt-3">
+              <p className="mb-1.5 px-3 text-xs font-medium text-muted">Library</p>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={() => setLibraryId('')}
+                  className={`flex h-10 items-center rounded-lg px-3 text-left text-sm font-semibold ${
+                    !libraryId ? 'bg-surface text-ink' : 'text-muted hover:bg-surfaceHover hover:text-ink'
+                  }`}
+                >
+                  All Libraries
+                </button>
+                {libraries.map((lib) => (
+                  <button
+                    key={lib.Id}
+                    onClick={() => setLibraryId(lib.Id)}
+                    className={`flex h-10 items-center rounded-lg px-3 text-left text-sm font-semibold ${
+                      libraryId === lib.Id ? 'bg-surface text-ink' : 'text-muted hover:bg-surfaceHover hover:text-ink'
+                    }`}
+                  >
+                    {lib.Name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </nav>

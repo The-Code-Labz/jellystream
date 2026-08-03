@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Play, Info, LibraryBig } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useLibrary } from '@/context/LibraryContext';
 import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, getImageUrl, formatRuntime } from '@/lib/jellyfin';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero, SkeletonShelf } from '@/components/Skeleton';
@@ -9,6 +10,7 @@ import type { JellyfinItem } from '@/lib/types';
 
 export function Home() {
   const { user } = useAuth();
+  const { libraryId } = useLibrary();
   const [hero, setHero] = useState<JellyfinItem | null>(null);
   const [recentlyAdded, setRecentlyAdded] = useState<JellyfinItem[]>([]);
   const [continueWatching, setContinueWatching] = useState<JellyfinItem[]>([]);
@@ -25,11 +27,23 @@ export function Home() {
     setError('');
     try {
       const [recent, resume, upcoming, movieRes, showRes] = await Promise.all([
-        fetchRecentlyAdded(user.AccessToken, user.Id, 20),
-        fetchContinueWatching(user.AccessToken, user.Id, 20),
-        fetchNextUp(user.AccessToken, user.Id, 20),
-        fetchItems(user.AccessToken, user.Id, { Recursive: true, IncludeItemTypes: 'Movie', SortBy: 'SortName', Limit: 20 }),
-        fetchItems(user.AccessToken, user.Id, { Recursive: true, IncludeItemTypes: 'Series', SortBy: 'SortName', Limit: 20 }),
+        fetchRecentlyAdded(user.AccessToken, user.Id, 20, libraryId || undefined),
+        fetchContinueWatching(user.AccessToken, user.Id, 20, libraryId || undefined),
+        fetchNextUp(user.AccessToken, user.Id, 20, libraryId || undefined),
+        fetchItems(user.AccessToken, user.Id, {
+          Recursive: true,
+          IncludeItemTypes: 'Movie',
+          SortBy: 'SortName',
+          Limit: 20,
+          ...(libraryId && { ParentId: libraryId }),
+        }),
+        fetchItems(user.AccessToken, user.Id, {
+          Recursive: true,
+          IncludeItemTypes: 'Series',
+          SortBy: 'SortName',
+          Limit: 20,
+          ...(libraryId && { ParentId: libraryId }),
+        }),
       ]);
       setRecentlyAdded(recent.Items);
       setContinueWatching(resume.Items);
@@ -42,7 +56,7 @@ export function Home() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, libraryId]);
 
   useEffect(() => {
     load();

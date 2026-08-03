@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useLibrary } from '@/context/LibraryContext';
 import { searchItems } from '@/lib/jellyfin';
 import { PosterGrid } from '@/components/PosterGrid';
 import { SkeletonPosterGrid } from '@/components/Skeleton';
@@ -9,6 +10,7 @@ import type { JellyfinItem } from '@/lib/types';
 
 export function Search() {
   const { user } = useAuth();
+  const { libraryId } = useLibrary();
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [items, setItems] = useState<JellyfinItem[]>([]);
@@ -29,7 +31,7 @@ export function Search() {
       setLoading(true);
       setError('');
       try {
-        const res = await searchItems(user!.AccessToken, user!.Id, activeQuery, 50);
+        const res = await searchItems(user!.AccessToken, user!.Id, activeQuery, 50, libraryId || undefined);
         setItems(res.Items);
         setTotal(res.TotalRecordCount);
       } catch (err) {
@@ -39,7 +41,7 @@ export function Search() {
       }
     }
     load();
-  }, [user, activeQuery]);
+  }, [user, activeQuery, libraryId]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

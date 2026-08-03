@@ -126,11 +126,19 @@ export async function fetchItem(token: string, userId: string, itemId: string): 
   return request(`/Users/${userId}/Items/${itemId}?Fields=Chapters,Trickplay,MediaStreams`, { token }) as Promise<JellyfinItem>;
 }
 
-export async function fetchNextUp(token: string, userId: string, limit = 20): Promise<JellyfinItemsResponse> {
-  return request(`/Shows/NextUp?UserId=${userId}&Limit=${limit}`, { token }) as Promise<JellyfinItemsResponse>;
+/** Returns the libraries (Views) the user has access to — used to build the library switcher. */
+export async function fetchLibraries(token: string, userId: string): Promise<JellyfinItem[]> {
+  const data = (await request(`/Users/${userId}/Views`, { token })) as JellyfinItemsResponse;
+  return data.Items;
 }
 
-export async function fetchContinueWatching(token: string, userId: string, limit = 20): Promise<JellyfinItemsResponse> {
+export async function fetchNextUp(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {
+  const query = new URLSearchParams({ UserId: userId, Limit: String(limit) });
+  if (libraryId) query.set('ParentId', libraryId);
+  return request(`/Shows/NextUp?${query.toString()}`, { token }) as Promise<JellyfinItemsResponse>;
+}
+
+export async function fetchContinueWatching(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Movie,Episode',
@@ -138,29 +146,32 @@ export async function fetchContinueWatching(token: string, userId: string, limit
     Limit: limit,
     SortBy: 'DatePlayed',
     SortOrder: 'Descending',
+    ...(libraryId && { ParentId: libraryId }),
   });
 }
 
-export async function fetchRecentlyAdded(token: string, userId: string, limit = 20): Promise<JellyfinItemsResponse> {
+export async function fetchRecentlyAdded(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Movie,Series',
     SortBy: 'DateCreated',
     SortOrder: 'Descending',
     Limit: limit,
+    ...(libraryId && { ParentId: libraryId }),
   });
 }
 
 export async function fetchMovies(
   token: string,
   userId: string,
-  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number } = {}
+  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number; libraryId?: string } = {}
 ): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Movie',
     ...(options.genre && { Genres: options.genre }),
     ...(options.year && { Years: options.year }),
+    ...(options.libraryId && { ParentId: options.libraryId }),
     SortBy: options.sortBy || 'SortName',
     SortOrder: options.sortOrder || 'Ascending',
     StartIndex: options.startIndex || 0,
@@ -171,13 +182,14 @@ export async function fetchMovies(
 export async function fetchSeries(
   token: string,
   userId: string,
-  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number } = {}
+  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number; libraryId?: string } = {}
 ): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Series',
     ...(options.genre && { Genres: options.genre }),
     ...(options.year && { Years: options.year }),
+    ...(options.libraryId && { ParentId: options.libraryId }),
     SortBy: options.sortBy || 'SortName',
     SortOrder: options.sortOrder || 'Ascending',
     StartIndex: options.startIndex || 0,
@@ -210,16 +222,19 @@ export async function fetchSimilar(token: string, userId: string, itemId: string
   return request(`/Items/${itemId}/Similar?UserId=${userId}&Limit=${limit}`, { token }) as Promise<JellyfinItemsResponse>;
 }
 
-export async function fetchGenres(token: string): Promise<{ Items: { Name: string; Id: string }[] }> {
-  return request('/Genres?SortBy=SortName', { token }) as Promise<{ Items: { Name: string; Id: string }[] }>;
+export async function fetchGenres(token: string, libraryId?: string): Promise<{ Items: { Name: string; Id: string }[] }> {
+  const query = new URLSearchParams({ SortBy: 'SortName' });
+  if (libraryId) query.set('ParentId', libraryId);
+  return request(`/Genres?${query.toString()}`, { token }) as Promise<{ Items: { Name: string; Id: string }[] }>;
 }
 
-export async function searchItems(token: string, userId: string, query: string, limit = 50): Promise<JellyfinItemsResponse> {
+export async function searchItems(token: string, userId: string, query: string, limit = 50, libraryId?: string): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     SearchTerm: query,
     IncludeItemTypes: 'Movie,Series,Episode',
     Limit: limit,
+    ...(libraryId && { ParentId: libraryId }),
   });
 }
 
