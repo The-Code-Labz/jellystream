@@ -173,7 +173,13 @@ export function Watch() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#050607]">
-      <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-border/60 bg-[#050607] px-4">
+      <div
+        className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-border/60 bg-[#050607] px-4"
+        style={{
+          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+          paddingRight: 'max(1rem, env(safe-area-inset-right))',
+        }}
+      >
         <Link
           to={backHref}
           className="flex h-9 items-center gap-2 rounded px-2 text-sm text-ink hover:text-accent"

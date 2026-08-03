@@ -223,9 +223,21 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   const toggleFullscreen = () => {
     const container = containerRef.current;
+    const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void; webkitDisplayingFullscreen?: boolean }) | null;
     if (!container) return;
+
+    // iOS Safari has no Fullscreen API for arbitrary elements (requestFullscreen is undefined/
+    // rejects on <div>) — the only fullscreen path there is the video element's own native
+    // webkitEnterFullscreen(), which hands off to iOS's native player chrome instead of ours.
+    if (!container.requestFullscreen && video?.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+      return;
+    }
+
     if (!document.fullscreenElement) {
-      container.requestFullscreen().then(() => setFullscreen(true)).catch(() => null);
+      container.requestFullscreen().then(() => setFullscreen(true)).catch(() => {
+        video?.webkitEnterFullscreen?.();
+      });
     } else {
       document.exitFullscreen().then(() => setFullscreen(false)).catch(() => null);
     }
@@ -234,7 +246,17 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   useEffect(() => {
     const onFsChange = () => setFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
+    const video = videoRef.current;
+    // iOS Safari's native video fullscreen doesn't touch document.fullscreenElement at all.
+    const onIosFsBegin = () => setFullscreen(true);
+    const onIosFsEnd = () => setFullscreen(false);
+    video?.addEventListener('webkitbeginfullscreen', onIosFsBegin);
+    video?.addEventListener('webkitendfullscreen', onIosFsEnd);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      video?.removeEventListener('webkitbeginfullscreen', onIosFsBegin);
+      video?.removeEventListener('webkitendfullscreen', onIosFsEnd);
+    };
   }, []);
 
   // Netflix-style auto-hide: keep refs in sync so the hide timer always reads current state.
@@ -505,7 +527,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       />
 
       {nextUp && showNextUp && (
-        <div className="absolute bottom-24 right-4 z-20 w-72 rounded-lg bg-[#141414] p-3 shadow-2xl ring-1 ring-white/10 sm:w-80">
+        <div
+          className="absolute bottom-24 z-20 w-[calc(100vw-2rem)] max-w-72 rounded-lg bg-[#141414] p-3 shadow-2xl ring-1 ring-white/10 sm:w-80 sm:max-w-none"
+          style={{ right: 'max(1rem, env(safe-area-inset-right))' }}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted">Next Episode</span>
             <button onClick={dismissNextUp} aria-label="Dismiss next episode" className="text-white/60 hover:text-white">
@@ -536,6 +561,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         className={`player-controls absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 transition-opacity duration-220 ${
           controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
+        style={{
+          paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+          paddingRight: 'max(1rem, env(safe-area-inset-right))',
+        }}
       >
         <div
           ref={seekBarRef}
@@ -547,7 +577,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           aria-valuemin={0}
           aria-valuemax={duration}
           aria-valuenow={progress}
-          className="group/seek relative mb-3 h-1 cursor-pointer rounded bg-white/20 py-2"
+          className="group/seek relative mb-3 h-1 cursor-pointer rounded bg-white/20 py-3 touch-none"
           style={{ marginTop: '-8px' }}
         >
           {previewTime !== null && (
@@ -600,44 +630,48 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           />
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={togglePlay}
-            aria-label={playing ? 'Pause' : 'Play'}
-            className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
-          >
-            {playing ? <Pause className="h-6 w-6 fill-white" /> : <Play className="h-6 w-6 fill-white" />}
-          </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={togglePlay}
+              aria-label={playing ? 'Pause' : 'Play'}
+              className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
+            >
+              {playing ? <Pause className="h-6 w-6 fill-white" /> : <Play className="h-6 w-6 fill-white" />}
+            </button>
 
-          <button
-            onClick={toggleMute}
-            aria-label={muted ? 'Unmute' : 'Mute'}
-            className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
-          >
-            {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-          </button>
+            <button
+              onClick={toggleMute}
+              aria-label={muted ? 'Unmute' : 'Mute'}
+              className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
+            >
+              {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+            </button>
 
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={muted ? 0 : volume}
-            onChange={(e) => {
-              const v = parseFloat(e.target.value);
-              if (videoRef.current) videoRef.current.volume = v;
-              setVolume(v);
-              if (v > 0) setMuted(false);
-            }}
-            aria-label="Volume"
-            className="w-24 accent-accent"
-          />
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={muted ? 0 : volume}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (videoRef.current) videoRef.current.volume = v;
+                setVolume(v);
+                if (v > 0) setMuted(false);
+              }}
+              aria-label="Volume"
+              // Hidden below sm: on touch devices volume is controlled by hardware buttons,
+              // and the extra 96px here is exactly what starves room for the track selectors.
+              className="hidden w-24 accent-accent sm:block"
+            />
 
-          <span className="pl-1 text-xs text-white/90">
-            {formatTime(progress)} / {formatTime(duration)}
-          </span>
+            <span className="pl-1 text-xs text-white/90">
+              {formatTime(progress)} / {formatTime(duration)}
+            </span>
+          </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:flex-nowrap">
             {qualityOptions.length > 1 && (
               <select
                 value={selectedQuality?.label ?? qualityOptions[0].label}
@@ -646,7 +680,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
                   if (next) onQualityChange?.(next);
                 }}
                 aria-label="Resolution"
-                className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
+                className="h-9 max-w-[110px] rounded border border-white/20 bg-black/70 px-2 text-xs text-white sm:max-w-none"
               >
                 {qualityOptions.map((q) => (
                   <option key={q.label} value={q.label}>{q.label}</option>
@@ -659,7 +693,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
                 value={selectedAudioIndex ?? audioStreams[0]?.Index}
                 onChange={(e) => onAudioChange?.(Number(e.target.value))}
                 aria-label="Audio track"
-                className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
+                className="h-9 max-w-[130px] rounded border border-white/20 bg-black/70 px-2 text-xs text-white sm:max-w-none"
               >
                 {audioStreams.map((s) => (
                   <option key={s.Index} value={s.Index}>{s.DisplayTitle || s.Language || `Audio ${s.Index}`}</option>
@@ -672,7 +706,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
                 value={selectedSubtitleIndex ?? ''}
                 onChange={(e) => onSubtitleChange?.(e.target.value === '' ? undefined : Number(e.target.value))}
                 aria-label="Subtitles"
-                className="h-9 rounded border border-white/20 bg-black/70 px-2 text-xs text-white"
+                className="h-9 max-w-[130px] rounded border border-white/20 bg-black/70 px-2 text-xs text-white sm:max-w-none"
               >
                 <option value="">Subtitles off</option>
                 {subtitleStreams.map((s) => (
