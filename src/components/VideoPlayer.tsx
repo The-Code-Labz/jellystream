@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Check, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
-import { getImageUrl, getTrickplayTileUrl, reportProgress } from '@/lib/jellyfin';
+import { getImageUrl, getTrickplayTileUrl, reportPlaybackStart, reportProgress } from '@/lib/jellyfin';
 import type { ChapterInfo, JellyfinItem, MediaStream, TrickplayInfo } from '@/lib/types';
 
 export interface QualityOption {
@@ -164,24 +164,75 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     };
   }, [src, startPositionTicks]);
 
+  // Progress (and therefore UserData.LastPlayedDate, which "Continue Watching" is sorted by)
+  // previously only updated on a 30s interval while actively playing, and NEVER flushed on
+  // pause/navigate-away/unmount. Stopping before the first 30s tick — or just pausing and
+  // leaving — meant the server's LastPlayedDate stayed stale from whatever session last
+  // happened to land on a tick, independent of actual recency. That's what produced
+  // "Continue Watching" ordering that looked randomly out of sync. Now flushed immediately
+  // on play/pause/seek and on unmount/tab-hide, not just every 30s.
+  //
+  // Also: `LastPlayedDate` is ONLY ever written by Jellyfin's `/Sessions/Playing` (playback
+  // START) endpoint — `/Sessions/Playing/Progress` never touches it, verified against the
+  // server source. We previously only called Progress, so no matter how promptly it flushed,
+  // LastPlayedDate was never set at all for anything played through this app. `reportStart`
+  // below fires once per session (guarded by `startReported`) alongside the first flush.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !playSessionId) return;
 
+    let startReported = false;
+    const reportStart = () => {
+      if (startReported || video.currentTime <= 0) return;
+      startReported = true;
+      reportPlaybackStart(token, itemId, video.currentTime * 10_000_000, playSessionId, mediaSourceId);
+    };
+
+    const flush = (played = false, keepalive = false) => {
+      if (video.currentTime <= 0) return;
+      reportStart();
+      reportProgress(
+        token,
+        itemId,
+        video.currentTime * 10_000_000,
+        played || video.currentTime >= video.duration - 5,
+        playSessionId,
+        mediaSourceId,
+        keepalive
+      ).catch(() => null);
+    };
+
+    const onPlay = () => flush();
+    const onPause = () => flush();
+    const onSeeked = () => flush();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush(false, true);
+    };
+
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('seeked', onSeeked);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onVisibility);
+
+    // Initial flush so LastPlayedDate updates the moment this session starts, not 30s later.
+    flush();
+
     const interval = setInterval(() => {
-      if (video.currentTime > 0 && !video.paused) {
-        reportProgress(
-          token,
-          itemId,
-          video.currentTime * 10_000_000,
-          video.currentTime >= video.duration - 5,
-          playSessionId,
-          mediaSourceId
-        ).catch(() => null);
-      }
+      if (video.currentTime > 0 && !video.paused) flush();
     }, 30_000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('seeked', onSeeked);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onVisibility);
+      // Final flush on unmount (episode switch, navigate away, quality/track reload) so the
+      // exact stop position and a fresh LastPlayedDate are recorded, not just the last tick.
+      flush(false, true);
+    };
   }, [itemId, token, playSessionId, mediaSourceId]);
 
   // Reset "up next" state whenever we load a new source (i.e. a different episode).
