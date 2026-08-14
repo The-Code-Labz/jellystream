@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Check, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
-import { getImageUrl, getTrickplayTileUrl, reportProgress } from '@/lib/jellyfin';
+import { getImageUrl, getTrickplayTileUrl, reportPlaybackStart, reportProgress } from '@/lib/jellyfin';
 import type { ChapterInfo, JellyfinItem, MediaStream, TrickplayInfo } from '@/lib/types';
 
 export interface QualityOption {
@@ -171,12 +171,26 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   // happened to land on a tick, independent of actual recency. That's what produced
   // "Continue Watching" ordering that looked randomly out of sync. Now flushed immediately
   // on play/pause/seek and on unmount/tab-hide, not just every 30s.
+  //
+  // Also: `LastPlayedDate` is ONLY ever written by Jellyfin's `/Sessions/Playing` (playback
+  // START) endpoint — `/Sessions/Playing/Progress` never touches it, verified against the
+  // server source. We previously only called Progress, so no matter how promptly it flushed,
+  // LastPlayedDate was never set at all for anything played through this app. `reportStart`
+  // below fires once per session (guarded by `startReported`) alongside the first flush.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !playSessionId) return;
 
+    let startReported = false;
+    const reportStart = () => {
+      if (startReported || video.currentTime <= 0) return;
+      startReported = true;
+      reportPlaybackStart(token, itemId, video.currentTime * 10_000_000, playSessionId, mediaSourceId);
+    };
+
     const flush = (played = false, keepalive = false) => {
       if (video.currentTime <= 0) return;
+      reportStart();
       reportProgress(
         token,
         itemId,

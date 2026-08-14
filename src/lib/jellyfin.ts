@@ -315,6 +315,41 @@ export async function toggleFavorite(token: string, userId: string, itemId: stri
   });
 }
 
+/**
+ * Reports that playback has started for a session — POST /Sessions/Playing.
+ *
+ * IMPORTANT — this is the ONLY endpoint that sets `UserData.LastPlayedDate`. Verified directly
+ * against the Jellyfin server source (Emby.Server.Implementations/Session/SessionManager.cs):
+ * `OnPlaybackStart` sets `data.LastPlayedDate = DateTime.UtcNow`, while `OnPlaybackProgress`
+ * (the `/Sessions/Playing/Progress` endpoint `reportProgress` below calls) only ever touches
+ * `PositionTicks`/`Played` — it never writes `LastPlayedDate`, no matter how often or how
+ * promptly it's flushed. We were calling Progress only, so `LastPlayedDate` was never set for
+ * ANY title played through this app — that's the real "Continue Watching" ordering bug (not the
+ * client-side sort, and not the flush timing fixed previously — both of those were correct, but
+ * operating on a field the server was never asked to populate). Must be called once when
+ * playback actually begins, before the first progress report.
+ */
+export async function reportPlaybackStart(
+  token: string,
+  itemId: string,
+  positionTicks: number,
+  playSessionId?: string,
+  mediaSourceId?: string
+): Promise<void> {
+  await request('/Sessions/Playing', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({
+      ItemId: itemId,
+      MediaSourceId: mediaSourceId || itemId,
+      PositionTicks: Math.round(positionTicks),
+      CanSeek: true,
+      IsPaused: false,
+      PlaySessionId: playSessionId || '',
+    }),
+  }).catch(() => null);
+}
+
 export async function reportProgress(
   token: string,
   itemId: string,
@@ -329,7 +364,7 @@ export async function reportProgress(
     token,
     // keepalive lets this survive a tab-close/navigate-away flush — a normal fetch gets
     // aborted mid-flight once the page starts unloading, which is exactly the moment this
-    // "final" progress report (and the LastPlayedDate update it triggers) matters most.
+    // "final" progress report matters most.
     ...(keepalive ? { keepalive: true } : {}),
     body: JSON.stringify({
       ItemId: itemId,
