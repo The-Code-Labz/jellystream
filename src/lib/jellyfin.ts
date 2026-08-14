@@ -142,11 +142,19 @@ export async function fetchNextUp(token: string, userId: string, limit = 20, lib
 }
 
 export async function fetchContinueWatching(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {
+  // IMPORTANT: do NOT send `Limit: limit` to the server here. The server's own
+  // `SortBy=DatePlayed` ordering on a mixed Movie+Episode + `Filters=IsResumable` query is
+  // unreliable (observed oldest-first). Previously we capped the *server-side* result at
+  // `limit` (20) BEFORE re-sorting client-side — so if the server's wrong ordering put stale
+  // items first, the truly-recent items got truncated out of the response entirely and no
+  // amount of client-side re-sorting could recover them (you can only reorder what you got).
+  // Fix: pull a large, effectively-uncapped pool from the server, sort it correctly
+  // client-side by `UserData.LastPlayedDate`, THEN slice to `limit`.
   const res = await fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Movie,Episode',
     Filters: 'IsResumable',
-    Limit: limit,
+    Limit: 300,
     SortBy: 'DatePlayed',
     SortOrder: 'Descending',
     // Episodes rarely carry their own Backdrop image — these extra fields let the hero banner
@@ -154,16 +162,14 @@ export async function fetchContinueWatching(token: string, userId: string, limit
     Fields: 'BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId',
     ...(libraryId && { ParentId: libraryId }),
   });
-  // Defensive client-side re-sort: Jellyfin's `SortBy=DatePlayed` on a mixed Movie+Episode
-  // query with `Filters=IsResumable` doesn't reliably order newest-first on every server
-  // version (observed: oldest-first, most-recent-last). LastPlayedDate is always present on
-  // UserData for resumable items, so sort on it explicitly rather than trust server order.
-  const items = [...res.Items].sort((a, b) => {
-    const at = a.UserData?.LastPlayedDate ? Date.parse(a.UserData.LastPlayedDate) : 0;
-    const bt = b.UserData?.LastPlayedDate ? Date.parse(b.UserData.LastPlayedDate) : 0;
-    return bt - at;
-  });
-  return { ...res, Items: items };
+  const items = [...res.Items]
+    .sort((a, b) => {
+      const at = a.UserData?.LastPlayedDate ? Date.parse(a.UserData.LastPlayedDate) : 0;
+      const bt = b.UserData?.LastPlayedDate ? Date.parse(b.UserData.LastPlayedDate) : 0;
+      return bt - at;
+    })
+    .slice(0, limit);
+  return { ...res, Items: items, TotalRecordCount: items.length };
 }
 
 export async function fetchRecentlyAdded(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {
