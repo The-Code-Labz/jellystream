@@ -123,7 +123,10 @@ export async function fetchItems(
 }
 
 export async function fetchItem(token: string, userId: string, itemId: string): Promise<JellyfinItem> {
-  return request(`/Users/${userId}/Items/${itemId}?Fields=Chapters,Trickplay,MediaStreams`, { token }) as Promise<JellyfinItem>;
+  return request(
+    `/Users/${userId}/Items/${itemId}?Fields=Chapters,Trickplay,MediaStreams,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId`,
+    { token }
+  ) as Promise<JellyfinItem>;
 }
 
 /** Returns the libraries (Views) the user has access to — used to build the library switcher. */
@@ -146,6 +149,9 @@ export async function fetchContinueWatching(token: string, userId: string, limit
     Limit: limit,
     SortBy: 'DatePlayed',
     SortOrder: 'Descending',
+    // Episodes rarely carry their own Backdrop image — these extra fields let the hero banner
+    // fall back to the parent series' backdrop instead of requesting a non-existent image.
+    Fields: 'BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId',
     ...(libraryId && { ParentId: libraryId }),
   });
   // Defensive client-side re-sort: Jellyfin's `SortBy=DatePlayed` on a mixed Movie+Episode
@@ -167,6 +173,7 @@ export async function fetchRecentlyAdded(token: string, userId: string, limit = 
     SortBy: 'DateCreated',
     SortOrder: 'Descending',
     Limit: limit,
+    Fields: 'BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId',
     ...(libraryId && { ParentId: libraryId }),
   });
 }
@@ -335,6 +342,29 @@ export function getImageUrl(itemId: string, type: 'Primary' | 'Backdrop' | 'Logo
   if (options.tag) query.set('tag', options.tag);
   const qs = query.toString();
   return `${base}/Items/${itemId}/Images/${type}${qs ? `?${qs}` : ''}`;
+}
+
+/**
+ * Resolves a hero/backdrop image URL for an item, falling back to the parent series' backdrop
+ * (or Primary image) when the item itself has none — episodes almost never carry their own
+ * Backdrop image, so requesting `/Items/{episodeId}/Images/Backdrop` directly 404s and renders
+ * as a blank/black box. Requires the item to have been fetched with
+ * `Fields=BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId`.
+ */
+export function getHeroBackdropUrl(item: JellyfinItem, maxWidth = 1920): string {
+  if (item.BackdropImageTags && item.BackdropImageTags.length > 0) {
+    return getImageUrl(item.Id, 'Backdrop', { maxWidth, tag: item.BackdropImageTags[0] });
+  }
+  if (item.ParentBackdropItemId) {
+    return getImageUrl(item.ParentBackdropItemId, 'Backdrop', {
+      maxWidth,
+      tag: item.ParentBackdropImageTags?.[0],
+    });
+  }
+  if (item.SeriesId) {
+    return getImageUrl(item.SeriesId, 'Backdrop', { maxWidth });
+  }
+  return getImageUrl(item.Id, 'Primary', { maxWidth });
 }
 
 export function getStreamUrl(

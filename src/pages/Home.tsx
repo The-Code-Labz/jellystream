@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Play, Info, LibraryBig } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useLibrary } from '@/context/LibraryContext';
-import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, fetchGenres, getImageUrl, formatRuntime } from '@/lib/jellyfin';
+import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, fetchGenres, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero, SkeletonShelf } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
@@ -21,6 +21,7 @@ export function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [logoFailed, setLogoFailed] = useState(false);
+  const [backdropFailed, setBackdropFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -112,6 +113,7 @@ export function Home() {
 
   useEffect(() => {
     setLogoFailed(false);
+    setBackdropFailed(false);
   }, [hero?.Id]);
 
   if (loading) {
@@ -154,13 +156,16 @@ export function Home() {
   return (
     <div className="pb-16">
       {hero ? (
-        <div className="relative min-h-hero w-full overflow-hidden">
-          <img
-            src={getImageUrl(hero.Id, 'Backdrop', { maxWidth: 1920 })}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+        <div className="relative min-h-hero w-full overflow-hidden bg-surface">
+          {!backdropFailed && (
+            <img
+              src={getHeroBackdropUrl(hero, 1920)}
+              alt=""
+              aria-hidden="true"
+              onError={() => setBackdropFailed(true)}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
           <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/30 to-transparent" />
 
@@ -196,7 +201,7 @@ export function Home() {
                   <Play className="h-5 w-5 fill-background" /> {isResuming ? 'Resume' : 'Play'}
                 </Link>
                 <Link
-                  to={`/item/${hero.Id}`}
+                  to={`/item/${hero.SeriesId || hero.Id}`}
                   className="flex h-11 items-center gap-2 rounded-lg bg-surface/80 px-6 font-semibold text-ink hover:bg-surfaceHover"
                 >
                   <Info className="h-5 w-5" /> Details

@@ -30,6 +30,8 @@ export interface JellyfinItem {
   IndexNumber?: number;
   ParentIndexNumber?: number;
   BackdropImageTags?: string[];
+  ParentBackdropItemId?: string;
+  ParentBackdropImageTags?: string[];
   PrimaryImageAspectRatio?: number;
   MediaStreams?: MediaStream[];
   MediaSources?: MediaSource[];
