@@ -1,8 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Maximize, Minimize, Pause, Play, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
-import { getTrickplayTileUrl, reportProgress } from '@/lib/jellyfin';
-import type { ChapterInfo, MediaStream, TrickplayInfo } from '@/lib/types';
+import { Check, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
+import { getImageUrl, getTrickplayTileUrl, reportProgress } from '@/lib/jellyfin';
+import type { ChapterInfo, JellyfinItem, MediaStream, TrickplayInfo } from '@/lib/types';
 
 export interface QualityOption {
   label: string;
@@ -40,10 +40,21 @@ interface VideoPlayerProps {
   onSubtitleChange?: (index: number | undefined) => void;
   nextUp?: NextUpInfo | null;
   onPlayNext?: () => void;
+  // Episode navigation — rendered INSIDE this component's own container (and therefore inside
+  // both real and pseudo fullscreen) so prev/next/episode-list stay reachable on mobile fullscreen,
+  // where anything living outside the fullscreen element is unreachable/invisible by design.
+  episodes?: JellyfinItem[];
+  currentEpisodeId?: string;
+  onSelectEpisode?: (id: string) => void;
+  hasPrevEpisode?: boolean;
+  hasNextEpisode?: boolean;
+  onPrevEpisode?: () => void;
+  onNextEpisode?: () => void;
 }
 
 export interface VideoPlayerHandle {
   getCurrentTime: () => number;
+  openEpisodeList: () => void;
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer({
@@ -66,6 +77,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   onSubtitleChange,
   nextUp,
   onPlayNext,
+  episodes = [],
+  currentEpisodeId,
+  onSelectEpisode,
+  hasPrevEpisode,
+  hasNextEpisode,
+  onPrevEpisode,
+  onNextEpisode,
 }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +94,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
+  // CSS-based fullscreen fallback for browsers with no Fullscreen API on arbitrary elements
+  // (iOS Safari). Using this instead of video.webkitEnterFullscreen() keeps our entire custom
+  // control layer (seek bar, episode nav, drawer, trickplay) usable — native iOS fullscreen
+  // hands off to Apple's own player chrome and makes all of that completely inaccessible.
+  const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
+  const [showEpisodeList, setShowEpisodeList] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [previewTime, setPreviewTime] = useState<number | null>(null);
   const [previewRatio, setPreviewRatio] = useState(0);
@@ -97,6 +121,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   // quality/audio/subtitle change, which requires tearing down and reloading this <video>.
   useImperativeHandle(ref, () => ({
     getCurrentTime: () => videoRef.current?.currentTime ?? 0,
+    openEpisodeList: () => setShowEpisodeList(true),
   }));
 
   useEffect(() => {
@@ -221,43 +246,78 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     setMuted(video.muted);
   };
 
+  const fullscreenActive = fullscreen || pseudoFullscreen;
+
+  // Best-effort landscape lock — supported on some Android browsers while fullscreen, silently
+  // ignored (not supported at all on iOS Safari for web content, and requires fullscreen/PWA
+  // context on Android) so this is pure enhancement, never load-bearing.
+  const lockLandscape = () => {
+    try {
+      const orientation = (screen as unknown as { orientation?: { lock?: (o: string) => Promise<void> } }).orientation;
+      orientation?.lock?.('landscape')?.catch(() => null);
+    } catch {
+      /* no-op: Screen Orientation API unsupported */
+    }
+  };
+  const unlockOrientation = () => {
+    try {
+      (screen as unknown as { orientation?: { unlock?: () => void } }).orientation?.unlock?.();
+    } catch {
+      /* no-op */
+    }
+  };
+
   const toggleFullscreen = () => {
     const container = containerRef.current;
-    const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void; webkitDisplayingFullscreen?: boolean }) | null;
     if (!container) return;
 
-    // iOS Safari has no Fullscreen API for arbitrary elements (requestFullscreen is undefined/
-    // rejects on <div>) — the only fullscreen path there is the video element's own native
-    // webkitEnterFullscreen(), which hands off to iOS's native player chrome instead of ours.
-    if (!container.requestFullscreen && video?.webkitEnterFullscreen) {
-      video.webkitEnterFullscreen();
+    if (fullscreenActive) {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => null);
+      setPseudoFullscreen(false);
+      unlockOrientation();
       return;
     }
 
-    if (!document.fullscreenElement) {
-      container.requestFullscreen().then(() => setFullscreen(true)).catch(() => {
-        video?.webkitEnterFullscreen?.();
-      });
+    if (typeof container.requestFullscreen === 'function') {
+      container
+        .requestFullscreen()
+        .then(() => {
+          setFullscreen(true);
+          lockLandscape();
+        })
+        .catch(() => {
+          // Real Fullscreen API exists but was rejected (permissions policy, etc.) — fall back
+          // to the CSS pseudo-fullscreen so the user still gets a usable fullscreen experience.
+          setPseudoFullscreen(true);
+          lockLandscape();
+        });
     } else {
-      document.exitFullscreen().then(() => setFullscreen(false)).catch(() => null);
+      // iOS Safari (and any UA without Fullscreen API on arbitrary elements): CSS pseudo-fullscreen.
+      setPseudoFullscreen(true);
+      lockLandscape();
     }
   };
 
   useEffect(() => {
-    const onFsChange = () => setFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', onFsChange);
-    const video = videoRef.current;
-    // iOS Safari's native video fullscreen doesn't touch document.fullscreenElement at all.
-    const onIosFsBegin = () => setFullscreen(true);
-    const onIosFsEnd = () => setFullscreen(false);
-    video?.addEventListener('webkitbeginfullscreen', onIosFsBegin);
-    video?.addEventListener('webkitendfullscreen', onIosFsEnd);
-    return () => {
-      document.removeEventListener('fullscreenchange', onFsChange);
-      video?.removeEventListener('webkitbeginfullscreen', onIosFsBegin);
-      video?.removeEventListener('webkitendfullscreen', onIosFsEnd);
+    const onFsChange = () => {
+      const active = !!document.fullscreenElement;
+      setFullscreen(active);
+      if (!active) unlockOrientation();
     };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
+
+  // Lock body scroll while CSS pseudo-fullscreen is active (position:fixed alone doesn't stop
+  // the page behind it from scrolling on touch devices).
+  useEffect(() => {
+    if (!pseudoFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [pseudoFullscreen]);
 
   // Netflix-style auto-hide: keep refs in sync so the hide timer always reads current state.
   useEffect(() => {
@@ -368,6 +428,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    // Capture the pointer so drag tracking survives layout/compositing changes (e.g. the
+    // fullscreen transition) instead of relying solely on event bubbling.
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     setScrubbing(true);
     seekTo(timeFromClientX(e.clientX));
     updatePreview(e.clientX);
@@ -508,9 +571,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     <div
       ref={containerRef}
       tabIndex={0}
-      className={`group relative h-full w-full bg-black outline-none ${
-        !controlsVisible && playing ? 'cursor-none' : ''
-      }`}
+      className={`group relative bg-black outline-none ${
+        pseudoFullscreen ? 'fixed inset-0 z-[999] h-[100dvh] w-screen' : 'h-full w-full'
+      } ${!controlsVisible && playing ? 'cursor-none' : ''}`}
     >
       <video
         ref={videoRef}
@@ -524,6 +587,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           if (nextUp) playNextNow();
         }}
         playsInline
+        disablePictureInPicture
       />
 
       {nextUp && showNextUp && (
@@ -715,16 +779,98 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               </select>
             )}
 
+            {episodes.length > 0 && (
+              <div className="flex items-center gap-1 border-l border-white/15 pl-1">
+                <button
+                  onClick={onPrevEpisode}
+                  disabled={!hasPrevEpisode}
+                  aria-label="Previous episode"
+                  className="flex h-11 w-11 items-center justify-center text-white hover:text-accent disabled:opacity-30 disabled:hover:text-white"
+                >
+                  <SkipBack className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setShowEpisodeList(true)}
+                  aria-label="Episode list"
+                  className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
+                >
+                  <ListVideo className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={onNextEpisode}
+                  disabled={!hasNextEpisode}
+                  aria-label="Next episode"
+                  className="flex h-11 w-11 items-center justify-center text-white hover:text-accent disabled:opacity-30 disabled:hover:text-white"
+                >
+                  <SkipForward className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
             <button
               onClick={toggleFullscreen}
-              aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              aria-label={fullscreenActive ? 'Exit fullscreen' : 'Enter fullscreen'}
               className="flex h-11 w-11 items-center justify-center text-white hover:text-accent"
             >
-              {fullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+              {fullscreenActive ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
             </button>
           </div>
         </div>
       </div>
+
+      {showEpisodeList && (
+        <div className="absolute inset-0 z-40 flex justify-end">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setShowEpisodeList(false)} />
+          <div
+            className="relative flex h-full w-full max-w-sm flex-col overflow-y-auto bg-[#0c0d0f] p-4 shadow-2xl"
+            style={{
+              paddingTop: 'max(1rem, env(safe-area-inset-top))',
+              paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            }}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Episodes</h2>
+              <button onClick={() => setShowEpisodeList(false)} aria-label="Close episode list" className="text-white hover:text-accent">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ul className="space-y-2">
+              {episodes.map((ep) => (
+                <li key={ep.Id}>
+                  <button
+                    onClick={() => {
+                      setShowEpisodeList(false);
+                      onSelectEpisode?.(ep.Id);
+                    }}
+                    className={`flex w-full gap-3 rounded-lg p-2 text-left transition-colors duration-180 ${
+                      ep.Id === currentEpisodeId ? 'bg-accent/15 ring-1 ring-accent/40' : 'bg-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    <img
+                      src={getImageUrl(ep.Id, 'Primary', { maxWidth: 200 })}
+                      alt=""
+                      loading="lazy"
+                      className="h-14 w-24 flex-shrink-0 rounded object-cover"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = '/placeholder-poster.svg';
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {ep.IndexNumber != null ? `${ep.IndexNumber}. ` : ''}{ep.Name}
+                        </p>
+                        {ep.UserData?.Played && <Check className="h-3.5 w-3.5 flex-shrink-0 text-success" aria-label="Watched" />}
+                      </div>
+                      {ep.ParentIndexNumber != null && <p className="text-xs text-white/60">Season {ep.ParentIndexNumber}</p>}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

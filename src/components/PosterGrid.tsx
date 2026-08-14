@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { PosterCard } from './PosterCard';
+import { progressPercent } from '@/lib/jellyfin';
 import type { JellyfinItem } from '@/lib/types';
 
 interface PosterGridProps {
@@ -20,7 +21,7 @@ export function PosterGrid({ items, emptyState, emptyText = 'No items found.' }:
     >
       {items.map((item) => (
         <div key={item.Id} role="listitem">
-          <PosterCard item={item} />
+          <PosterCard item={item} progress={progressPercent(item)} />
         </div>
       ))}
     </div>

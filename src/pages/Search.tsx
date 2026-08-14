@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -7,6 +7,8 @@ import { searchItems } from '@/lib/jellyfin';
 import { PosterGrid } from '@/components/PosterGrid';
 import { SkeletonPosterGrid } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
+
+const SEARCH_DEBOUNCE_MS = 350;
 
 export function Search() {
   const { user } = useAuth();
@@ -19,6 +21,23 @@ export function Search() {
   const [error, setError] = useState('');
 
   const activeQuery = searchParams.get('q') || '';
+  const debounceRef = useRef<number | null>(null);
+
+  // Netflix-style instant search: debounce keystrokes into the URL (?q=) instead of requiring
+  // a submit, while Enter/submit still fires immediately by flushing the pending debounce.
+  useEffect(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    const trimmed = query.trim();
+    if (trimmed === activeQuery) return;
+    debounceRef.current = window.setTimeout(() => {
+      if (trimmed) setSearchParams({ q: trimmed }, { replace: true });
+      else setSearchParams({}, { replace: true });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   useEffect(() => {
     if (!user) return;
@@ -45,14 +64,29 @@ export function Search() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
     if (query.trim()) setSearchParams({ q: query.trim() });
     else setSearchParams({});
   };
 
   const clear = () => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
     setQuery('');
     setSearchParams({});
   };
+
+  // Netflix-style grouped results — Movies / Series / Episodes as separate sections instead of
+  // one undifferentiated grid, so a title search doesn't bury series among a pile of episodes.
+  const groups = useMemo(() => {
+    const movies = items.filter((i) => i.Type === 'Movie');
+    const series = items.filter((i) => i.Type === 'Series');
+    const episodes = items.filter((i) => i.Type === 'Episode');
+    return [
+      { label: 'Movies', items: movies },
+      { label: 'Series', items: series },
+      { label: 'Episodes', items: episodes },
+    ].filter((g) => g.items.length > 0);
+  }, [items]);
 
   return (
     <div className="px-5 py-8 sm:px-8 lg:px-12">
@@ -92,29 +126,35 @@ export function Search() {
         <p className="py-16 text-center text-sm text-danger">{error}</p>
       ) : loading ? (
         <SkeletonPosterGrid />
+      ) : items.length === 0 ? (
+        activeQuery ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <p className="text-ink">No results for “{activeQuery}”.</p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={clear}
+                className="flex h-10 items-center rounded-lg bg-surface px-4 text-sm font-semibold text-ink hover:bg-surfaceHover"
+              >
+                Clear search
+              </button>
+              <Link to="/movies" className="text-sm font-medium text-accent hover:underline">Browse Movies</Link>
+              <Link to="/shows" className="text-sm font-medium text-accent hover:underline">Browse Series</Link>
+            </div>
+          </div>
+        ) : (
+          <p className="py-16 text-center text-muted">Start typing to search your library.</p>
+        )
       ) : (
-        <PosterGrid
-          items={items}
-          emptyState={
-            activeQuery ? (
-              <div className="flex flex-col items-center gap-3 py-16 text-center">
-                <p className="text-ink">No results for “{activeQuery}”.</p>
-                <div className="flex flex-wrap items-center justify-center gap-3">
-                  <button
-                    onClick={clear}
-                    className="flex h-10 items-center rounded-lg bg-surface px-4 text-sm font-semibold text-ink hover:bg-surfaceHover"
-                  >
-                    Clear search
-                  </button>
-                  <Link to="/movies" className="text-sm font-medium text-accent hover:underline">Browse Movies</Link>
-                  <Link to="/shows" className="text-sm font-medium text-accent hover:underline">Browse Series</Link>
-                </div>
-              </div>
-            ) : (
-              <p className="py-16 text-center text-muted">Start typing to search your library.</p>
-            )
-          }
-        />
+        <div className="space-y-10">
+          {groups.map((group) => (
+            <div key={group.label}>
+              <h2 className="mb-3 text-lg font-bold text-ink">
+                {group.label} <span className="text-sm font-normal text-muted">{group.items.length}</span>
+              </h2>
+              <PosterGrid items={group.items} />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

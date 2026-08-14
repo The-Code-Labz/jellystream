@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Play, Info, LibraryBig } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useLibrary } from '@/context/LibraryContext';
-import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, getImageUrl, formatRuntime } from '@/lib/jellyfin';
+import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, fetchGenres, getImageUrl, formatRuntime } from '@/lib/jellyfin';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero, SkeletonShelf } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
@@ -17,6 +17,7 @@ export function Home() {
   const [nextUp, setNextUp] = useState<JellyfinItem[]>([]);
   const [movies, setMovies] = useState<JellyfinItem[]>([]);
   const [shows, setShows] = useState<JellyfinItem[]>([]);
+  const [genreRows, setGenreRows] = useState<{ name: string; items: JellyfinItem[] }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [logoFailed, setLogoFailed] = useState(false);
@@ -61,6 +62,37 @@ export function Home() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Netflix-style genre rows — a secondary, independent fetch so a slow genre round-trip never
+  // blocks the hero/Continue Watching/Movies/Series shelves from rendering first.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const g = await fetchGenres(user.AccessToken, libraryId || undefined);
+        const rows = await Promise.all(
+          g.Items.slice(0, 8).map(async (genre) => {
+            const res = await fetchItems(user.AccessToken, user.Id, {
+              Recursive: true,
+              IncludeItemTypes: 'Movie,Series',
+              Genres: genre.Name,
+              SortBy: 'Random',
+              Limit: 20,
+              ...(libraryId && { ParentId: libraryId }),
+            });
+            return { name: genre.Name, items: res.Items };
+          })
+        );
+        if (!cancelled) setGenreRows(rows.filter((r) => r.items.length > 0));
+      } catch {
+        if (!cancelled) setGenreRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, libraryId]);
 
   useEffect(() => {
     setLogoFailed(false);
@@ -172,6 +204,14 @@ export function Home() {
       <Carousel title="Recently Added" items={recentlyAdded} viewAllHref="/catalog" />
       <Carousel title="Movies" items={movies} viewAllHref="/movies" />
       <Carousel title="Series" items={shows} viewAllHref="/shows" />
+      {genreRows.map((row) => (
+        <Carousel
+          key={row.name}
+          title={row.name}
+          items={row.items}
+          viewAllHref={`/catalog?genre=${encodeURIComponent(row.name)}`}
+        />
+      ))}
     </div>
   );
 }

@@ -389,6 +389,14 @@ export function getTrickplayTileUrl(
   return `${base}/Videos/${itemId}/Trickplay/${width}/${tileIndex}.jpg?${query.toString()}`;
 }
 
+/** Percent watched (0-100) for an item with a saved resume position, or undefined if N/A. */
+export function progressPercent(item: JellyfinItem): number | undefined {
+  const ticks = item.UserData?.PlaybackPositionTicks;
+  const runtime = item.RuntimeTicks;
+  if (!ticks || !runtime) return undefined;
+  return Math.min(100, Math.round((ticks / runtime) * 100));
+}
+
 export function ticksToMinutes(ticks?: number): number {
   if (!ticks) return 0;
   return Math.round(ticks / 10_000_000 / 60);
