@@ -139,7 +139,7 @@ export async function fetchNextUp(token: string, userId: string, limit = 20, lib
 }
 
 export async function fetchContinueWatching(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {
-  return fetchItems(token, userId, {
+  const res = await fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Movie,Episode',
     Filters: 'IsResumable',
@@ -148,6 +148,16 @@ export async function fetchContinueWatching(token: string, userId: string, limit
     SortOrder: 'Descending',
     ...(libraryId && { ParentId: libraryId }),
   });
+  // Defensive client-side re-sort: Jellyfin's `SortBy=DatePlayed` on a mixed Movie+Episode
+  // query with `Filters=IsResumable` doesn't reliably order newest-first on every server
+  // version (observed: oldest-first, most-recent-last). LastPlayedDate is always present on
+  // UserData for resumable items, so sort on it explicitly rather than trust server order.
+  const items = [...res.Items].sort((a, b) => {
+    const at = a.UserData?.LastPlayedDate ? Date.parse(a.UserData.LastPlayedDate) : 0;
+    const bt = b.UserData?.LastPlayedDate ? Date.parse(b.UserData.LastPlayedDate) : 0;
+    return bt - at;
+  });
+  return { ...res, Items: items };
 }
 
 export async function fetchRecentlyAdded(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {

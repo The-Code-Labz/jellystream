@@ -84,7 +84,23 @@ export function Home() {
             return { name: genre.Name, items: res.Items };
           })
         );
-        if (!cancelled) setGenreRows(rows.filter((r) => r.items.length > 0));
+        // De-dupe across rows: without this, a title tagged with several of the sampled genres
+        // (common — most titles carry 2-3 genres) shows up again in nearly every row, making the
+        // rows look identical/redundant instead of distinct groupings. Keep each title in the
+        // first (highest-priority) row it appears in only, requiring at least 6 items to be
+        // worth keeping as its own row (avoids sparse near-empty shelves after de-dup).
+        const seen = new Set<string>();
+        const deduped = rows
+          .map((row) => {
+            const items = row.items.filter((item) => {
+              if (seen.has(item.Id)) return false;
+              seen.add(item.Id);
+              return true;
+            });
+            return { ...row, items };
+          })
+          .filter((r) => r.items.length >= 6);
+        if (!cancelled) setGenreRows(deduped);
       } catch {
         if (!cancelled) setGenreRows([]);
       }

@@ -46,20 +46,29 @@ export function Search() {
       setTotal(0);
       return;
     }
+    // Stale-response guard: typing quickly (or a slow network) can leave an earlier request
+    // in flight after a newer one has already fired. Without this, whichever response lands
+    // last wins — often the STALE one — showing results for a query that's no longer active.
+    let cancelled = false;
     async function load() {
       setLoading(true);
       setError('');
       try {
         const res = await searchItems(user!.AccessToken, user!.Id, activeQuery, 50, libraryId || undefined);
+        if (cancelled) return;
         setItems(res.Items);
         setTotal(res.TotalRecordCount);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Search failed.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [user, activeQuery, libraryId]);
 
   const submit = (e: React.FormEvent) => {
@@ -151,7 +160,10 @@ export function Search() {
               <h2 className="mb-3 text-lg font-bold text-ink">
                 {group.label} <span className="text-sm font-normal text-muted">{group.items.length}</span>
               </h2>
-              <PosterGrid items={group.items} />
+              {/* Episodes use landscape (16:9 still) cards — Jellyfin's episode "Primary" image
+                  is a widescreen thumbnail, not a poster; forcing it into the portrait 2:3 grid
+                  used by Movies/Series crops it into an ugly, hard-to-read sliver. */}
+              <PosterGrid items={group.items} variant={group.label === 'Episodes' ? 'landscape' : 'portrait'} />
             </div>
           ))}
         </div>

@@ -21,6 +21,7 @@ export interface JellyfinItem {
     IsFavorite?: boolean;
     PlaybackPositionTicks?: number;
     UnplayedItemCount?: number;
+    LastPlayedDate?: string;
   };
   SeriesId?: string;
   SeasonId?: string;
