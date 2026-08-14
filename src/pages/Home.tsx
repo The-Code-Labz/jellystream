@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Play, Info, LibraryBig } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useLibrary } from '@/context/LibraryContext';
-import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, getImageUrl, formatRuntime } from '@/lib/jellyfin';
+import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, fetchGenres, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero, SkeletonShelf } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
@@ -17,9 +17,11 @@ export function Home() {
   const [nextUp, setNextUp] = useState<JellyfinItem[]>([]);
   const [movies, setMovies] = useState<JellyfinItem[]>([]);
   const [shows, setShows] = useState<JellyfinItem[]>([]);
+  const [genreRows, setGenreRows] = useState<{ name: string; items: JellyfinItem[] }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [logoFailed, setLogoFailed] = useState(false);
+  const [backdropFailed, setBackdropFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -62,8 +64,56 @@ export function Home() {
     load();
   }, [load]);
 
+  // Netflix-style genre rows — a secondary, independent fetch so a slow genre round-trip never
+  // blocks the hero/Continue Watching/Movies/Series shelves from rendering first.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const g = await fetchGenres(user.AccessToken, libraryId || undefined);
+        const rows = await Promise.all(
+          g.Items.slice(0, 8).map(async (genre) => {
+            const res = await fetchItems(user.AccessToken, user.Id, {
+              Recursive: true,
+              IncludeItemTypes: 'Movie,Series',
+              Genres: genre.Name,
+              SortBy: 'Random',
+              Limit: 20,
+              ...(libraryId && { ParentId: libraryId }),
+            });
+            return { name: genre.Name, items: res.Items };
+          })
+        );
+        // De-dupe across rows: without this, a title tagged with several of the sampled genres
+        // (common — most titles carry 2-3 genres) shows up again in nearly every row, making the
+        // rows look identical/redundant instead of distinct groupings. Keep each title in the
+        // first (highest-priority) row it appears in only, requiring at least 6 items to be
+        // worth keeping as its own row (avoids sparse near-empty shelves after de-dup).
+        const seen = new Set<string>();
+        const deduped = rows
+          .map((row) => {
+            const items = row.items.filter((item) => {
+              if (seen.has(item.Id)) return false;
+              seen.add(item.Id);
+              return true;
+            });
+            return { ...row, items };
+          })
+          .filter((r) => r.items.length >= 6);
+        if (!cancelled) setGenreRows(deduped);
+      } catch {
+        if (!cancelled) setGenreRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, libraryId]);
+
   useEffect(() => {
     setLogoFailed(false);
+    setBackdropFailed(false);
   }, [hero?.Id]);
 
   if (loading) {
@@ -106,13 +156,16 @@ export function Home() {
   return (
     <div className="pb-16">
       {hero ? (
-        <div className="relative min-h-hero w-full overflow-hidden">
-          <img
-            src={getImageUrl(hero.Id, 'Backdrop', { maxWidth: 1920 })}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+        <div className="relative min-h-hero w-full overflow-hidden bg-surface">
+          {!backdropFailed && (
+            <img
+              src={getHeroBackdropUrl(hero, 1920)}
+              alt=""
+              aria-hidden="true"
+              onError={() => setBackdropFailed(true)}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
           <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/30 to-transparent" />
 
@@ -148,7 +201,7 @@ export function Home() {
                   <Play className="h-5 w-5 fill-background" /> {isResuming ? 'Resume' : 'Play'}
                 </Link>
                 <Link
-                  to={`/item/${hero.Id}`}
+                  to={`/item/${hero.SeriesId || hero.Id}`}
                   className="flex h-11 items-center gap-2 rounded-lg bg-surface/80 px-6 font-semibold text-ink hover:bg-surfaceHover"
                 >
                   <Info className="h-5 w-5" /> Details
@@ -172,6 +225,14 @@ export function Home() {
       <Carousel title="Recently Added" items={recentlyAdded} viewAllHref="/catalog" />
       <Carousel title="Movies" items={movies} viewAllHref="/movies" />
       <Carousel title="Series" items={shows} viewAllHref="/shows" />
+      {genreRows.map((row) => (
+        <Carousel
+          key={row.name}
+          title={row.name}
+          items={row.items}
+          viewAllHref={`/catalog?genre=${encodeURIComponent(row.name)}`}
+        />
+      ))}
     </div>
   );
 }

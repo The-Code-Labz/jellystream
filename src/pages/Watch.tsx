@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Check, ListVideo, SkipBack, SkipForward, X } from 'lucide-react';
+import { ArrowLeft, ListVideo, SkipBack, SkipForward } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchItem, fetchEpisodes, getPlaybackInfo, getStreamUrl, getImageUrl, resolveMediaUrl, selectTrickplayResolution, stopEncoding } from '@/lib/jellyfin';
 import { VideoPlayer, type QualityOption, type NextUpInfo, type VideoPlayerHandle } from '@/components/VideoPlayer';
@@ -28,7 +28,6 @@ export function Watch() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
-  const [showEpisodes, setShowEpisodes] = useState(false);
   // Overrides the server-reported resume position when we tear down/reload the player for a
   // quality/audio/subtitle change — the server's UserData.PlaybackPositionTicks is only as
   // fresh as the last 30s progress report, so relying on it alone visibly rewinds playback.
@@ -97,7 +96,6 @@ export function Watch() {
     episodeIndex >= 0 && episodeIndex < episodes.length - 1 ? episodes[episodeIndex + 1] : null;
 
   const goToEpisode = (episodeId: string) => {
-    setShowEpisodes(false);
     navigate(`/watch/${episodeId}`);
   };
 
@@ -172,10 +170,11 @@ export function Watch() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#050607]">
+    <div className="flex min-h-[100dvh] flex-col bg-[#050607]">
       <div
-        className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-border/60 bg-[#050607] px-4"
+        className="flex min-h-14 flex-shrink-0 items-center gap-3 border-b border-border/60 bg-[#050607] px-4"
         style={{
+          paddingTop: 'env(safe-area-inset-top)',
           paddingLeft: 'max(1rem, env(safe-area-inset-left))',
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
         }}
@@ -199,7 +198,7 @@ export function Watch() {
               <SkipBack className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setShowEpisodes(true)}
+              onClick={() => playerRef.current?.openEpisodeList()}
               aria-label="Episode list"
               className="flex h-9 w-9 items-center justify-center rounded text-ink hover:text-accent"
             >
@@ -216,53 +215,6 @@ export function Watch() {
           </div>
         )}
       </div>
-
-      {showEpisodes && (
-        <div className="fixed inset-0 z-30 flex justify-end">
-          <div className="absolute inset-0 bg-black/70" onClick={() => setShowEpisodes(false)} />
-          <div className="relative flex h-full w-full max-w-sm flex-col overflow-y-auto bg-[#0c0d0f] p-4 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Episodes</h2>
-              <button onClick={() => setShowEpisodes(false)} aria-label="Close episode list" className="text-ink hover:text-accent">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <ul className="space-y-2">
-              {episodes.map((ep) => (
-                <li key={ep.Id}>
-                  <button
-                    onClick={() => goToEpisode(ep.Id)}
-                    className={`flex w-full gap-3 rounded-lg p-2 text-left transition-colors duration-180 ${
-                      ep.Id === id ? 'bg-accent/15 ring-1 ring-accent/40' : 'bg-surface hover:bg-surfaceHover'
-                    }`}
-                  >
-                    <img
-                      src={getImageUrl(ep.Id, 'Primary', { maxWidth: 200 })}
-                      alt=""
-                      loading="lazy"
-                      className="h-14 w-24 flex-shrink-0 rounded object-cover"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src = '/placeholder-poster.svg';
-                      }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1">
-                        <p className="truncate text-sm font-semibold text-ink">
-                          {ep.IndexNumber != null ? `${ep.IndexNumber}. ` : ''}{ep.Name}
-                        </p>
-                        {ep.UserData?.Played && <Check className="h-3.5 w-3.5 flex-shrink-0 text-success" aria-label="Watched" />}
-                      </div>
-                      {ep.ParentIndexNumber != null && (
-                        <p className="text-xs text-muted">Season {ep.ParentIndexNumber}</p>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
 
       <div className="flex flex-1 items-center justify-center overflow-hidden">
         {error ? (
@@ -287,7 +239,12 @@ export function Watch() {
         ) : loading || !item || !source ? (
           <SkeletonPlayer />
         ) : (
-          <div className="aspect-video max-h-[calc(100vh-56px)] w-full">
+          // calc() needs spaces around the minus operator to parse at all — the previous
+          // `calc(100vh-56px)` (no spaces) was invalid CSS and silently never applied, and
+          // 100vh itself is the wrong unit on mobile (sized off the LARGEST viewport, i.e.
+          // with the browser chrome hidden, so it overshoots when the address bar is visible —
+          // most pronounced on iOS Safari). 100dvh tracks the actual visible viewport.
+          <div className="aspect-video max-h-[calc(100dvh_-_56px)] w-full">
             <VideoPlayer
               ref={playerRef}
               src={buildSrc()}
@@ -309,6 +266,13 @@ export function Watch() {
               onSubtitleChange={handleSubtitleChange}
               nextUp={nextUp}
               onPlayNext={() => nextEpisode && goToEpisode(nextEpisode.Id)}
+              episodes={episodes}
+              currentEpisodeId={id}
+              onSelectEpisode={goToEpisode}
+              hasPrevEpisode={Boolean(prevEpisode)}
+              hasNextEpisode={Boolean(nextEpisode)}
+              onPrevEpisode={() => prevEpisode && goToEpisode(prevEpisode.Id)}
+              onNextEpisode={() => nextEpisode && goToEpisode(nextEpisode.Id)}
             />
           </div>
         )}

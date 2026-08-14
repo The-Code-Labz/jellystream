@@ -102,11 +102,12 @@ export function Navbar() {
 
   return (
     <nav
-      className={`fixed left-0 right-0 top-0 z-50 h-[72px] transition-colors duration-220 ${
+      className={`fixed left-0 right-0 top-0 z-50 h-[calc(72px_+_env(safe-area-inset-top))] transition-colors duration-220 ${
         scrolled ? 'bg-background/[.94] backdrop-blur-md border-b border-border' : 'bg-transparent'
       }`}
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      <div className="mx-auto flex h-full max-w-shell items-center gap-2 px-5 sm:px-8 lg:px-12">
+      <div className="mx-auto flex h-[72px] max-w-shell items-center gap-2 px-5 sm:px-8 lg:px-12">
         <Link to="/" className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-ink">
           <Clapperboard className="h-6 w-6 text-accent" aria-hidden="true" />
           <span>JellyStream</span>
@@ -186,7 +187,7 @@ export function Navbar() {
             <form
               onSubmit={submit}
               role="search"
-              className="fixed inset-x-0 top-[72px] z-40 border-b border-border bg-background p-4 sm:static sm:z-auto sm:w-72 sm:border-0 sm:bg-transparent sm:p-0"
+              className="fixed inset-x-0 top-[calc(72px_+_env(safe-area-inset-top))] z-40 border-b border-border bg-background p-4 sm:static sm:z-auto sm:w-72 sm:border-0 sm:bg-transparent sm:p-0"
             >
               <label htmlFor="nav-search" className="sr-only">
                 Search your Jellyfin library

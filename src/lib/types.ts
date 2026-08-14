@@ -21,6 +21,7 @@ export interface JellyfinItem {
     IsFavorite?: boolean;
     PlaybackPositionTicks?: number;
     UnplayedItemCount?: number;
+    LastPlayedDate?: string;
   };
   SeriesId?: string;
   SeasonId?: string;
@@ -29,6 +30,8 @@ export interface JellyfinItem {
   IndexNumber?: number;
   ParentIndexNumber?: number;
   BackdropImageTags?: string[];
+  ParentBackdropItemId?: string;
+  ParentBackdropImageTags?: string[];
   PrimaryImageAspectRatio?: number;
   MediaStreams?: MediaStream[];
   MediaSources?: MediaSource[];

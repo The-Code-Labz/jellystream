@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Play, Heart, Check, Clock, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchItem, fetchSimilar, fetchSeasons, fetchEpisodes, markPlayed, toggleFavorite, getImageUrl, formatRuntime } from '@/lib/jellyfin';
+import { fetchItem, fetchSimilar, fetchSeasons, fetchEpisodes, markPlayed, toggleFavorite, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
@@ -17,6 +17,7 @@ export function Detail() {
   const [selectedSeason, setSelectedSeason] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [backdropFailed, setBackdropFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!user || !id) return;
@@ -48,6 +49,10 @@ export function Detail() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setBackdropFailed(false);
+  }, [id]);
 
   useEffect(() => {
     if (!user || !item || item.Type !== 'Series' || !selectedSeason) return;
@@ -88,13 +93,16 @@ export function Detail() {
 
   return (
     <div className="pb-16">
-      <div className="relative min-h-hero w-full overflow-hidden">
-        <img
-          src={getImageUrl(item.Id, 'Backdrop', { maxWidth: 1920 })}
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+      <div className="relative min-h-hero w-full overflow-hidden bg-surface">
+        {!backdropFailed && (
+          <img
+            src={getHeroBackdropUrl(item, 1920)}
+            alt=""
+            aria-hidden="true"
+            onError={() => setBackdropFailed(true)}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/10" />
 
         <div className="relative flex min-h-hero flex-col justify-end px-5 pb-10 sm:px-8 lg:px-12">

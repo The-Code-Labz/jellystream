@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { PosterCard } from './PosterCard';
+import { progressPercent } from '@/lib/jellyfin';
 import type { JellyfinItem } from '@/lib/types';
 
 interface CarouselProps {
@@ -62,16 +63,9 @@ export function Carousel({ title, items, variant = 'portrait', count, viewAllHre
       </div>
       <div ref={rowRef} className="no-scrollbar flex gap-4 overflow-x-auto px-5 pb-1 sm:px-8 lg:px-12">
         {items.map((item) => (
-          <PosterCard key={item.Id} item={item} variant={variant} progress={progressFor(item)} />
+          <PosterCard key={item.Id} item={item} variant={variant} progress={progressPercent(item)} />
         ))}
       </div>
     </section>
   );
-}
-
-function progressFor(item: JellyfinItem): number | undefined {
-  const ticks = item.UserData?.PlaybackPositionTicks;
-  const runtime = item.RuntimeTicks;
-  if (!ticks || !runtime) return undefined;
-  return Math.min(100, Math.round((ticks / runtime) * 100));
 }

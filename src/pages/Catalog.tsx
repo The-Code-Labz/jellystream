@@ -120,7 +120,7 @@ export function Catalog({ type }: CatalogProps) {
         <p className="mt-1 text-sm text-muted">{loading ? 'Loading…' : `${total} title${total === 1 ? '' : 's'}`}</p>
       </div>
 
-      <div className="sticky top-[72px] z-30 mt-4 border-y border-border bg-background/95 px-5 py-3 backdrop-blur sm:px-8 lg:px-12">
+      <div className="sticky top-[calc(72px_+_env(safe-area-inset-top))] z-30 mt-4 border-y border-border bg-background/95 px-5 py-3 backdrop-blur sm:px-8 lg:px-12">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-genre" className="text-xs font-medium text-muted">Genre</label>
