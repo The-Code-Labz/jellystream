@@ -315,11 +315,16 @@ export async function reportProgress(
   positionTicks: number,
   played: boolean,
   playSessionId?: string,
-  mediaSourceId?: string
+  mediaSourceId?: string,
+  keepalive?: boolean
 ): Promise<void> {
   await request('/Sessions/Playing/Progress', {
     method: 'POST',
     token,
+    // keepalive lets this survive a tab-close/navigate-away flush — a normal fetch gets
+    // aborted mid-flight once the page starts unloading, which is exactly the moment this
+    // "final" progress report (and the LastPlayedDate update it triggers) matters most.
+    ...(keepalive ? { keepalive: true } : {}),
     body: JSON.stringify({
       ItemId: itemId,
       MediaSourceId: mediaSourceId || itemId,
