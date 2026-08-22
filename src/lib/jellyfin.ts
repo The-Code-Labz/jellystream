@@ -135,9 +135,10 @@ export async function fetchLibraries(token: string, userId: string): Promise<Jel
   return data.Items;
 }
 
-export async function fetchNextUp(token: string, userId: string, limit = 20, libraryId?: string): Promise<JellyfinItemsResponse> {
+export async function fetchNextUp(token: string, userId: string, limit = 20, libraryId?: string, seriesId?: string): Promise<JellyfinItemsResponse> {
   const query = new URLSearchParams({ UserId: userId, Limit: String(limit) });
   if (libraryId) query.set('ParentId', libraryId);
+  if (seriesId) query.set('SeriesId', seriesId);
   return request(`/Shows/NextUp?${query.toString()}`, { token }) as Promise<JellyfinItemsResponse>;
 }
 

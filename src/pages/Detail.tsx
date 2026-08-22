@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Play, Heart, Check, Clock, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchItem, fetchSimilar, fetchSeasons, fetchEpisodes, markPlayed, toggleFavorite, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
+import { fetchItem, fetchSimilar, fetchSeasons, fetchEpisodes, fetchNextUp, markPlayed, toggleFavorite, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
@@ -15,6 +15,7 @@ export function Detail() {
   const [seasons, setSeasons] = useState<JellyfinItem[]>([]);
   const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
   const [selectedSeason, setSelectedSeason] = useState<string>('');
+  const [playTarget, setPlayTarget] = useState<JellyfinItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -31,13 +32,25 @@ export function Detail() {
       setItem(detail);
       setSimilar(sim.Items);
       if (detail.Type === 'Series') {
-        const seas = await fetchSeasons(user.AccessToken, user.Id, id);
+        // A Series item can never be sent to PlaybackInfo directly — Jellyfin only implements
+        // IHasMediaSources on Episode/Movie, and doing so throws InvalidCastException server-side.
+        // Resolve the actual episode to play: resume-in-progress or next-unwatched via NextUp,
+        // falling back to the first episode of the first season for an entirely unwatched series.
+        const [seas, nextUp] = await Promise.all([
+          fetchSeasons(user.AccessToken, user.Id, id),
+          fetchNextUp(user.AccessToken, user.Id, 1, undefined, id).catch(() => null),
+        ]);
         setSeasons(seas.Items);
+        let target = nextUp?.Items[0] ?? null;
         if (seas.Items[0]) {
           setSelectedSeason(seas.Items[0].Id);
           const eps = await fetchEpisodes(user.AccessToken, user.Id, id, seas.Items[0].Id);
           setEpisodes(eps.Items);
+          if (!target) target = eps.Items[0] ?? null;
         }
+        setPlayTarget(target);
+      } else {
+        setPlayTarget(detail);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load this title.');
@@ -89,7 +102,7 @@ export function Detail() {
 
   const directors = item.People?.filter((p) => p.Type === 'Director').map((p) => p.Name) || [];
   const cast = item.People?.filter((p) => p.Type === 'Actor').slice(0, 8) || [];
-  const isResuming = Boolean(item.UserData?.PlaybackPositionTicks);
+  const isResuming = Boolean(playTarget?.UserData?.PlaybackPositionTicks);
 
   return (
     <div className="pb-16">
@@ -140,12 +153,21 @@ export function Detail() {
               {item.Overview && <p className="mt-4 text-base text-ink/80">{item.Overview}</p>}
 
               <div className="mt-6 flex flex-wrap gap-3">
-                <Link
-                  to={`/watch/${item.Id}`}
-                  className="flex h-11 items-center gap-2 rounded-lg bg-accent px-6 font-semibold text-background transition-colors duration-180 hover:bg-accentHover"
-                >
-                  <Play className="h-5 w-5 fill-background" /> {isResuming ? 'Resume' : 'Play'}
-                </Link>
+                {playTarget ? (
+                  <Link
+                    to={`/watch/${playTarget.Id}`}
+                    className="flex h-11 items-center gap-2 rounded-lg bg-accent px-6 font-semibold text-background transition-colors duration-180 hover:bg-accentHover"
+                  >
+                    <Play className="h-5 w-5 fill-background" /> {isResuming ? 'Resume' : 'Play'}
+                  </Link>
+                ) : (
+                  <span
+                    aria-disabled="true"
+                    className="flex h-11 cursor-not-allowed items-center gap-2 rounded-lg bg-surface px-6 font-semibold text-muted"
+                  >
+                    <Play className="h-5 w-5" /> No episodes
+                  </span>
+                )}
                 <button
                   onClick={handleToggleWatched}
                   aria-pressed={Boolean(item.UserData?.Played)}
