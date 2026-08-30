@@ -14,7 +14,16 @@ export function PosterCard({ item, progress, variant = 'portrait' }: PosterCardP
   const isEpisode = item.Type === 'Episode';
   const title = isEpisode ? item.SeriesName || item.Name : item.Name;
   const subtitle = isEpisode ? `S${item.ParentIndexNumber || 0}:E${item.IndexNumber || 0} · ${item.Name}` : '';
-  const imageType = variant === 'landscape' && !isEpisode ? 'Backdrop' : 'Primary';
+  // Landscape cards want a 16:9 image. Episodes almost always carry a Primary still that's
+  // already 16:9. Movies/Series are usually portrait Primary posters, so landscape rows try
+  // Backdrop instead — but NOT every title has a Backdrop image cached (Jellyfin reliably
+  // fetches Primary posters, Backdrop art is far less consistently populated). Requesting a
+  // Backdrop that doesn't exist 404s and renders the "No Poster" placeholder even though the
+  // item's own Primary poster (visible on its Detail page) loads fine. Only use Backdrop when
+  // the item was actually fetched with BackdropImageTags and one is present; otherwise fall
+  // back to the guaranteed-to-exist Primary image.
+  const hasBackdrop = Boolean(item.BackdropImageTags && item.BackdropImageTags.length > 0);
+  const imageType = variant === 'landscape' && !isEpisode && hasBackdrop ? 'Backdrop' : 'Primary';
   const typeLabel =
     item.Type === 'Series'
       ? 'Series'
