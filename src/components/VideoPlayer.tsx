@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import Hls from 'hls.js';
 import { Check, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { getImageUrl, getTrickplayTileUrl, reportPlaybackStart, reportProgress } from '@/lib/jellyfin';
+import { handleImageError } from '@/lib/imageRetry';
 import type { ChapterInfo, JellyfinItem, MediaStream, TrickplayInfo } from '@/lib/types';
 
 export interface QualityOption {
@@ -902,9 +903,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
                       alt=""
                       loading="lazy"
                       className="h-14 w-24 flex-shrink-0 rounded object-cover"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src = '/placeholder-poster.svg';
-                      }}
+                      onError={handleImageError}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1">

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Play, Heart, Check, Clock, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchItem, fetchSimilar, fetchSeasons, fetchEpisodes, fetchNextUp, markPlayed, toggleFavorite, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
+import { handleImageError } from '@/lib/imageRetry';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
@@ -112,7 +113,7 @@ export function Detail() {
             src={getHeroBackdropUrl(item, 1920)}
             alt=""
             aria-hidden="true"
-            onError={() => setBackdropFailed(true)}
+            onError={(e) => handleImageError(e, () => setBackdropFailed(true))}
             className="absolute inset-0 h-full w-full object-cover"
           />
         )}
@@ -123,6 +124,7 @@ export function Detail() {
             <img
               src={getImageUrl(item.Id, 'Primary', { maxWidth: 400 })}
               alt={`${item.Name} poster`}
+              onError={handleImageError}
               className="hidden w-44 flex-shrink-0 rounded-lg shadow-2xl md:block"
             />
             <div className="max-w-2xl flex-1">
@@ -260,9 +262,7 @@ export function Detail() {
                           alt={`${ep.Name} thumbnail`}
                           loading="lazy"
                           className="h-full w-full object-cover"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src = '/placeholder-poster.svg';
-                          }}
+                          onError={handleImageError}
                         />
                         {epProgress > 0 && epProgress < 100 && (
                           <div className="absolute inset-x-0 bottom-0 h-1 bg-white/15" aria-hidden="true">
