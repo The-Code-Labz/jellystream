@@ -4,6 +4,7 @@ import { Play, Info, LibraryBig } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useLibrary } from '@/context/LibraryContext';
 import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, fetchGenres, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
+import { handleImageError } from '@/lib/imageRetry';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero, SkeletonShelf } from '@/components/Skeleton';
 import type { JellyfinItem } from '@/lib/types';
@@ -162,7 +163,7 @@ export function Home() {
               src={getHeroBackdropUrl(hero, 1920)}
               alt=""
               aria-hidden="true"
-              onError={() => setBackdropFailed(true)}
+              onError={(e) => handleImageError(e, () => setBackdropFailed(true))}
               className="absolute inset-0 h-full w-full object-cover"
             />
           )}
@@ -175,7 +176,7 @@ export function Home() {
                 <img
                   src={getImageUrl(hero.Id, 'Logo', { maxWidth: 500 })}
                   alt={hero.Name}
-                  onError={() => setLogoFailed(true)}
+                  onError={(e) => handleImageError(e, () => setLogoFailed(true))}
                   className="mb-4 max-h-24 max-w-full object-contain object-left"
                 />
               ) : (

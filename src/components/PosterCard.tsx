@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Play, Star, Check } from 'lucide-react';
 import { getImageUrl, formatRuntime } from '@/lib/jellyfin';
+import { handleImageError } from '@/lib/imageRetry';
 import type { JellyfinItem } from '@/lib/types';
 
 interface PosterCardProps {
@@ -42,9 +43,7 @@ export function PosterCard({ item, progress, variant = 'portrait' }: PosterCardP
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).src = '/placeholder-poster.svg';
-          }}
+          onError={handleImageError}
         />
 
         <div
