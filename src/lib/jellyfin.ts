@@ -251,10 +251,25 @@ export async function fetchSimilar(token: string, userId: string, itemId: string
   return request(`/Items/${itemId}/Similar?UserId=${userId}&Limit=${limit}`, { token }) as Promise<JellyfinItemsResponse>;
 }
 
+// Anime metadata scrapers (AniDB/Anime plugin) routinely stuff source-material notes —
+// "Adapted from a manga", "Based on a light novel", "Adapted from a visual novel", etc. — into
+// Jellyfin's Genres field itself rather than Tags. These aren't genres, aren't consistently
+// applied across a library, and produce nonsense rows/filters ("Adapted from a manga" sitting
+// next to "Action"/"Comedy"). Filtered out everywhere genres are surfaced; every other genre
+// Jellyfin actually reports is left untouched and used as-is to categorize.
+const NOT_A_GENRE = /^(adapted|based)\s+(from|on)\b/i;
+export function isRealGenre(name: string): boolean {
+  return !NOT_A_GENRE.test(name.trim());
+}
+export function filterGenres(names: string[]): string[] {
+  return names.filter(isRealGenre);
+}
+
 export async function fetchGenres(token: string, libraryId?: string): Promise<{ Items: { Name: string; Id: string }[] }> {
   const query = new URLSearchParams({ SortBy: 'SortName' });
   if (libraryId) query.set('ParentId', libraryId);
-  return request(`/Genres?${query.toString()}`, { token }) as Promise<{ Items: { Name: string; Id: string }[] }>;
+  const res = (await request(`/Genres?${query.toString()}`, { token })) as { Items: { Name: string; Id: string }[] };
+  return { Items: res.Items.filter((g) => isRealGenre(g.Name)) };
 }
 
 export async function searchItems(token: string, userId: string, query: string, limit = 50, libraryId?: string): Promise<JellyfinItemsResponse> {

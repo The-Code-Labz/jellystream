@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Play, Info, LibraryBig } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useLibrary } from '@/context/LibraryContext';
-import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, fetchGenres, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
+import { fetchRecentlyAdded, fetchContinueWatching, fetchNextUp, fetchItems, fetchGenres, getImageUrl, getHeroBackdropUrl, formatRuntime, filterGenres } from '@/lib/jellyfin';
 import { handleImageError } from '@/lib/imageRetry';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero, SkeletonShelf } from '@/components/Skeleton';
@@ -148,7 +148,7 @@ export function Home() {
         hero.ProductionYear ? String(hero.ProductionYear) : null,
         hero.OfficialRating,
         hero.RuntimeTicks ? formatRuntime(hero.RuntimeTicks) : null,
-        ...(hero.Genres?.slice(0, 3) || []),
+        ...filterGenres(hero.Genres || []).slice(0, 3),
       ].filter(Boolean)
     : [];
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Play, Heart, Check, Clock, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchItem, fetchSimilar, fetchSeasons, fetchEpisodes, fetchNextUp, markPlayed, toggleFavorite, getImageUrl, getHeroBackdropUrl, formatRuntime } from '@/lib/jellyfin';
+import { fetchItem, fetchSimilar, fetchSeasons, fetchEpisodes, fetchNextUp, markPlayed, toggleFavorite, getImageUrl, getHeroBackdropUrl, formatRuntime, filterGenres } from '@/lib/jellyfin';
 import { handleImageError } from '@/lib/imageRetry';
 import { Carousel } from '@/components/Carousel';
 import { SkeletonHero } from '@/components/Skeleton';
@@ -104,6 +104,7 @@ export function Detail() {
   const directors = item.People?.filter((p) => p.Type === 'Director').map((p) => p.Name) || [];
   const cast = item.People?.filter((p) => p.Type === 'Actor').slice(0, 8) || [];
   const isResuming = Boolean(playTarget?.UserData?.PlaybackPositionTicks);
+  const genres = filterGenres(item.Genres || []);
 
   return (
     <div className="pb-16">
@@ -144,9 +145,9 @@ export function Detail() {
                 )}
               </div>
 
-              {item.Genres && item.Genres.length > 0 && (
+              {genres.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {item.Genres.map((g) => (
+                  {genres.map((g) => (
                     <span key={g} className="rounded border border-border px-2 py-0.5 text-xs text-muted">{g}</span>
                   ))}
                 </div>
