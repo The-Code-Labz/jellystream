@@ -185,17 +185,25 @@ export async function fetchRecentlyAdded(token: string, userId: string, limit = 
   });
 }
 
-export async function fetchMovies(
-  token: string,
-  userId: string,
-  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number; libraryId?: string } = {}
-): Promise<JellyfinItemsResponse> {
+interface CatalogOptions {
+  genre?: string;
+  year?: number;
+  sortBy?: string;
+  sortOrder?: string;
+  startIndex?: number;
+  limit?: number;
+  libraryId?: string;
+  nameStartsWith?: string;
+}
+
+export async function fetchMovies(token: string, userId: string, options: CatalogOptions = {}): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Movie',
     ...(options.genre && { Genres: options.genre }),
     ...(options.year && { Years: options.year }),
     ...(options.libraryId && { ParentId: options.libraryId }),
+    ...(options.nameStartsWith && { NameStartsWith: options.nameStartsWith }),
     SortBy: options.sortBy || 'SortName',
     SortOrder: options.sortOrder || 'Ascending',
     StartIndex: options.startIndex || 0,
@@ -203,17 +211,14 @@ export async function fetchMovies(
   });
 }
 
-export async function fetchSeries(
-  token: string,
-  userId: string,
-  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number; libraryId?: string } = {}
-): Promise<JellyfinItemsResponse> {
+export async function fetchSeries(token: string, userId: string, options: CatalogOptions = {}): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Series',
     ...(options.genre && { Genres: options.genre }),
     ...(options.year && { Years: options.year }),
     ...(options.libraryId && { ParentId: options.libraryId }),
+    ...(options.nameStartsWith && { NameStartsWith: options.nameStartsWith }),
     SortBy: options.sortBy || 'SortName',
     SortOrder: options.sortOrder || 'Ascending',
     StartIndex: options.startIndex || 0,
@@ -246,10 +251,25 @@ export async function fetchSimilar(token: string, userId: string, itemId: string
   return request(`/Items/${itemId}/Similar?UserId=${userId}&Limit=${limit}`, { token }) as Promise<JellyfinItemsResponse>;
 }
 
+// Anime metadata scrapers (AniDB/Anime plugin) routinely stuff source-material notes —
+// "Adapted from a manga", "Based on a light novel", "Adapted from a visual novel", etc. — into
+// Jellyfin's Genres field itself rather than Tags. These aren't genres, aren't consistently
+// applied across a library, and produce nonsense rows/filters ("Adapted from a manga" sitting
+// next to "Action"/"Comedy"). Filtered out everywhere genres are surfaced; every other genre
+// Jellyfin actually reports is left untouched and used as-is to categorize.
+const NOT_A_GENRE = /^(adapted|based)\s+(from|on)\b/i;
+export function isRealGenre(name: string): boolean {
+  return !NOT_A_GENRE.test(name.trim());
+}
+export function filterGenres(names: string[]): string[] {
+  return names.filter(isRealGenre);
+}
+
 export async function fetchGenres(token: string, libraryId?: string): Promise<{ Items: { Name: string; Id: string }[] }> {
   const query = new URLSearchParams({ SortBy: 'SortName' });
   if (libraryId) query.set('ParentId', libraryId);
-  return request(`/Genres?${query.toString()}`, { token }) as Promise<{ Items: { Name: string; Id: string }[] }>;
+  const res = (await request(`/Genres?${query.toString()}`, { token })) as { Items: { Name: string; Id: string }[] };
+  return { Items: res.Items.filter((g) => isRealGenre(g.Name)) };
 }
 
 export async function searchItems(token: string, userId: string, query: string, limit = 50, libraryId?: string): Promise<JellyfinItemsResponse> {
