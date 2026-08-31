@@ -185,17 +185,25 @@ export async function fetchRecentlyAdded(token: string, userId: string, limit = 
   });
 }
 
-export async function fetchMovies(
-  token: string,
-  userId: string,
-  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number; libraryId?: string } = {}
-): Promise<JellyfinItemsResponse> {
+interface CatalogOptions {
+  genre?: string;
+  year?: number;
+  sortBy?: string;
+  sortOrder?: string;
+  startIndex?: number;
+  limit?: number;
+  libraryId?: string;
+  nameStartsWith?: string;
+}
+
+export async function fetchMovies(token: string, userId: string, options: CatalogOptions = {}): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Movie',
     ...(options.genre && { Genres: options.genre }),
     ...(options.year && { Years: options.year }),
     ...(options.libraryId && { ParentId: options.libraryId }),
+    ...(options.nameStartsWith && { NameStartsWith: options.nameStartsWith }),
     SortBy: options.sortBy || 'SortName',
     SortOrder: options.sortOrder || 'Ascending',
     StartIndex: options.startIndex || 0,
@@ -203,17 +211,14 @@ export async function fetchMovies(
   });
 }
 
-export async function fetchSeries(
-  token: string,
-  userId: string,
-  options: { genre?: string; year?: number; sortBy?: string; sortOrder?: string; startIndex?: number; limit?: number; libraryId?: string } = {}
-): Promise<JellyfinItemsResponse> {
+export async function fetchSeries(token: string, userId: string, options: CatalogOptions = {}): Promise<JellyfinItemsResponse> {
   return fetchItems(token, userId, {
     Recursive: true,
     IncludeItemTypes: 'Series',
     ...(options.genre && { Genres: options.genre }),
     ...(options.year && { Years: options.year }),
     ...(options.libraryId && { ParentId: options.libraryId }),
+    ...(options.nameStartsWith && { NameStartsWith: options.nameStartsWith }),
     SortBy: options.sortBy || 'SortName',
     SortOrder: options.sortOrder || 'Ascending',
     StartIndex: options.startIndex || 0,
