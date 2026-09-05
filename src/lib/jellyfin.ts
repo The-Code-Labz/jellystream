@@ -10,13 +10,36 @@ function getBaseUrl(): string {
   return JELLYFIN_URL.replace(/\/$/, '');
 }
 
+/**
+ * Jellyfin's server keys an entire "session" — NowPlayingItem, PlayState/position, and
+ * `UserData.LastPlayedDate` reporting — by (Client, DeviceId, UserId) alone (confirmed against
+ * server source: SessionManager.GetSessionKey / GetSessionInfo). It is NOT per browser tab and
+ * NOT per PlaySessionId. `DeviceId` used to be a single value persisted in `localStorage`, which
+ * is shared by every tab of the same browser/profile — so two tabs open at once collapse into
+ * the exact same server-side session, and each tab's progress/now-playing report silently
+ * clobbers the other's (whichever tab's heartbeat lands last "wins", corrupting position/resume
+ * state for both). The actual HLS transcode processes stay independent (keyed by the per-call
+ * `PlaySessionId`, which Jellyfin issues fresh from `PlaybackInfo` regardless), so this isn't
+ * what breaks segment delivery — but the session collision is real and worth eliminating.
+ *
+ * Fix: keep a stable per-browser base id in `localStorage` (so Jellyfin's Dashboard > Devices
+ * still recognizes "this browser" as one family across visits), but suffix it with a per-tab id
+ * held in `sessionStorage` (NOT shared across tabs, but survives reloads/back-nav within the same
+ * tab). Two tabs now register as two distinct devices/sessions to Jellyfin, exactly as two
+ * separate browsers or a browser + native app already do.
+ */
 export function getDeviceId(): string {
-  let id = localStorage.getItem('jellyfin-device-id');
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem('jellyfin-device-id', id);
+  let baseId = localStorage.getItem('jellyfin-device-id');
+  if (!baseId) {
+    baseId = crypto.randomUUID();
+    localStorage.setItem('jellyfin-device-id', baseId);
   }
-  return id;
+  let tabId = sessionStorage.getItem('jellyfin-tab-id');
+  if (!tabId) {
+    tabId = crypto.randomUUID().slice(0, 8);
+    sessionStorage.setItem('jellyfin-tab-id', tabId);
+  }
+  return `${baseId}-${tabId}`;
 }
 
 const DEVICE_PROFILE = {
