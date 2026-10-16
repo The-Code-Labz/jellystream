@@ -467,8 +467,13 @@ export function getStreamUrl(
   subtitleStreamIndex?: number
 ): string {
   const base = getBaseUrl();
+  // NOTE: must be 'ApiKey' (capital A/K), not the legacy lowercase 'api_key'. Jellyfin 12.0+
+  // renamed the accepted query-string auth param and stopped reading the old lowercase alias
+  // by default (confirmed against Jellyfin's own StreamInfo.ToUrl(), which emits "&ApiKey=" —
+  // our own getTrickplayTileUrl() already used the correct casing, this fallback path didn't).
+  // Server-generated TranscodingUrl already uses the correct casing and is unaffected.
   const query = new URLSearchParams({
-    api_key: token,
+    ApiKey: token,
     DeviceId: getDeviceId(),
     VideoCodec: 'h264',
     AudioCodec: 'aac,mp3',
@@ -485,7 +490,7 @@ export function getStreamUrl(
 
 export function getDirectStreamUrl(itemId: string, token: string, mediaSourceId: string): string {
   const base = getBaseUrl();
-  return `${base}/Videos/${itemId}/stream?Static=true&api_key=${encodeURIComponent(token)}&MediaSourceId=${encodeURIComponent(mediaSourceId)}`;
+  return `${base}/Videos/${itemId}/stream?Static=true&ApiKey=${encodeURIComponent(token)}&MediaSourceId=${encodeURIComponent(mediaSourceId)}`;
 }
 
 /**
